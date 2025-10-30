@@ -174,15 +174,14 @@ python main.py mia_story your_audio
 ```
 
 The script name should match your JSON file (without `.json` extension).
-The script name should match your JSON file (without `.json` extension).
 The audio file should match the `audio_file` field in your JSON.
 
 ### Output
 
 Generated videos will be saved to `data/output/` with the naming format:
-`{script_name}_{timestamp}.mp4`
+`{script_name}.mp4`
 
-Example: `mia_story_20251030_143022.mp4`
+Example: `mia_story.mp4`
 
 ### Pipeline Stages
 
