@@ -103,36 +103,86 @@ Create a JSON script file in `data/input/` with the following structure:
 
 ```json
 {
-  "title": "My Video",
+  "audio_file": "your_audio_file.mp3",
+  "total_duration": 13.692,
+  "generation_method": "narrative pacing with visual-emotional pairing",
+  "analysis_date": "2025-10-29",
+
   "segments": [
     {
-      "text": "First segment text",
-      "duration": 5.0,
-      "keywords": ["nature", "mountains"]
+      "start_time": 0.0,
+      "end_time": 4.092,
+      "duration": 4.092,
+      "transcript": "In a quiet village where the sky brushes the fields in hues of gold,",
+      "topic": "Setting and tone establishment",
+      "content_type": "narrative_hook",
+      "visual_query": "golden sunset village countryside fields cinematic",
+      "visual_description": "Warm aerial shot of a village at sunset, golden fields swaying under soft light",
+      "reasoning": "4.1s - Opening imagery designed for slow, gentle introduction; emphasis on warmth and tranquility"
     },
     {
-      "text": "Second segment text",
-      "duration": 4.0,
-      "keywords": ["city", "night"]
+      "start_time": 4.093,
+      "end_time": 7.702,
+      "duration": 3.609,
+      "transcript": "young Mia discovered a map leading to forgotten treasures.",
+      "topic": "Inciting discovery",
+      "content_type": "narrative_event",
+      "visual_query": "child holding old map candlelight treasure adventure",
+      "visual_description": "Close-up of a child's hands unfolding an aged treasure map under candlelight",
+      "reasoning": "3.6s - Quick transition to establish action; tighter pacing to move from calm setup to curiosity"
     }
-  ]
+  ],
+
+  "summary": {
+    "total_segments": 2,
+    "average_duration": 3.9,
+    "min_duration": 2.3,
+    "max_duration": 4.1,
+    "segments_under_4s": 1,
+    "segments_4s_or_over": 1,
+    "topic_shifts_detected": 2,
+    "engagement_notes": "Short-form pacing with clear visual motifs and narrative beats."
+  }
 }
 ```
 
+**Required Fields:**
+
+- `audio_file`: Name of the audio file (must be in `data/input/` directory)
+- `segments`: Array of video segments with:
+  - `start_time`, `end_time`, `duration`: Timing information
+  - `transcript`: Narration text for this segment
+  - `visual_query`: Search query for finding relevant images
+  - `visual_description`: Description of the desired visual
+  - Additional metadata: `topic`, `content_type`, `reasoning`
+
 ### Running the Generator
 
-1. Place your input JSON file in `data/input/`
-2. Place your audio file in `data/input/`
-3. Run the generator:
+Place your files in `data/input/`:
 
-```python
-from main import generate_video
+- JSON script file (e.g., `mia_story.json`)
+- Audio file referenced in the JSON (e.g., `your_audio.mp3`)
 
-output_path = generate_video(
-    "data/input/script.json",
-    "data/input/audio.mp3"
-)
+Run the generator with:
+
+```bash
+# Generate video from a specific script
+python main.py mia_story
+
+# Or specify both script and audio explicitly
+python main.py mia_story your_audio
 ```
+
+The script name should match your JSON file (without `.json` extension).
+The script name should match your JSON file (without `.json` extension).
+The audio file should match the `audio_file` field in your JSON.
+
+### Output
+
+Generated videos will be saved to `data/output/` with the naming format:
+`{script_name}_{timestamp}.mp4`
+
+Example: `mia_story_20251030_143022.mp4`
 
 ### Pipeline Stages
 
