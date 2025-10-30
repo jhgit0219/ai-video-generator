@@ -246,10 +246,6 @@ class CinematicEffectsAgent:
 
         def transform_frame(get_frame, t):
             frame = get_frame(t)
-            # Ensure frame is uint8 numpy array
-            if frame.dtype != np.uint8:
-                frame = frame.astype(np.uint8)
-            
             progress = t / duration
             
             # Smoother easing function (cubic ease-in-out)
@@ -348,10 +344,6 @@ class CinematicEffectsAgent:
 
         def transform_frame(get_frame, t):
             frame = get_frame(t)
-            # Ensure frame is uint8 numpy array
-            if frame.dtype != np.uint8:
-                frame = frame.astype(np.uint8)
-            
             progress = t / duration
             # Smooth easing function (ease in-out)
             eased_progress = progress * progress * (3 - 2 * progress)
