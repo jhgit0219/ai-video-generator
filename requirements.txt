@@ -1,0 +1,63 @@
+# Use Tsinghua mirror for faster downloads in China
+--index-url https://pypi.tuna.tsinghua.edu.cn/simple
+
+# -----------------------------
+# Core scraping
+# -----------------------------
+requests
+beautifulsoup4
+selenium
+playwright
+aiohttp
+aiofiles
+
+# -----------------------------
+# Configuration & Environment
+# -----------------------------
+python-dotenv
+
+# -----------------------------
+# AI / ML
+# -----------------------------
+# PyTorch + CUDA must be installed first manually:
+# CPU-only: pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+# CUDA 12.8: pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
+# CUDA 12.1: pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+
+# Install OpenAI CLIP from GitHub
+git+https://github.com/openai/CLIP.git
+
+# Other ML utils
+transformers
+pillow
+numpy
+pydantic
+
+# -----------------------------
+# Video / postprocessing
+# -----------------------------
+moviepy
+opencv-python
+
+# -----------------------------
+# AI Image Enhancement (Real-ESRGAN)
+# -----------------------------
+# These packages provide AI-powered upscaling (requires GPU recommended)
+# NOTE: Install after PyTorch is set up
+basicsr==1.4.2
+realesrgan
+facexlib  # Optional but recommended for face enhancement
+gfpgan    # Optional but recommended for face restoration
+
+# Download model weights from:
+# https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth
+# Place in: weights/RealESRGAN_x4plus.pth
+# See IMAGE_ENHANCEMENT.md for full setup instructions
+
+ffmpeg-python
+
+# -----------------------------
+# STT / utility
+# -----------------------------
+SpeechRecognition
+tqdm

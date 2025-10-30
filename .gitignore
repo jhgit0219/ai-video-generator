@@ -1,0 +1,68 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.dll
+
+# Environments
+.env
+.env.local
+.venv/
+venv/
+ENV/
+
+# IDE/editor
+.vscode/
+.idea/
+*.iml
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test/coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.mypy_cache/
+*test*.py
+
+# Configuration with sensitive data
+config.py
+
+# Logs
+*.log
+logs/
+
+# Data and generated assets (keep repo to source code and requirements only)
+data/
+!data/**/.gitkeep
+!requirements.txt
+
+# Model weights (too large for git, download separately)
+weights/
+!weights/.gitkeep
+*.pth
+*.ckpt
+*.safetensors
+
+# Media outputs
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.mp3
+*.wav
+*.m4a
+*.aac
+
+# Caches
+**/.cache/
+**/cache/
+
+# Notebooks and checkpoints
+*.ipynb
+.ipynb_checkpoints/
