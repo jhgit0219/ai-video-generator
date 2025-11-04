@@ -39,9 +39,9 @@ FIXES_*.md
 PLAN_*.md
 IMPLEMENTATION_*.md
 *_PLAN_*.md
+Optimizing_*.md
 context_state.json
 cleanup_*.py
-clear_*.py
 outline_*.py
 
 # Unused/future features (keep locally, don't commit yet)

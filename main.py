@@ -342,7 +342,7 @@ Examples:
     if args.clear_cache:
         print("[*] Clearing Ollama cache before processing...")
         try:
-            from clear_ollama_cache import clear_all_ollama_contexts
+            from utils.ollama_cache import clear_all_ollama_contexts
             if not clear_all_ollama_contexts():
                 print("[WARNING] Cache clearing failed, but continuing anyway...")
             print()  # Empty line for separation

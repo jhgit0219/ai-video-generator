@@ -334,7 +334,7 @@ async def llm_refine_query(segment, top3, contextual_labels=None):
     # Clear Ollama context to prevent contamination from previous queries
     # This prevents the LLM from being influenced by previous segment analysis or retries
     try:
-        from clear_ollama_cache import clear_ollama_model_context
+        from utils.ollama_cache import clear_ollama_model_context
         logger.debug(f"[director_agent] Clearing Ollama context before retry...")
         clear_ollama_model_context(OLLAMA_MODEL)
     except Exception as e:

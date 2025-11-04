@@ -34,11 +34,11 @@ logger = setup_logger(__name__)
 
 # Import context clearing function
 try:
-    from clear_ollama_cache import clear_ollama_model_context
+    from utils.ollama_cache import clear_ollama_model_context
 except ImportError:
-    logger.warning("[effects_batch_director] clear_ollama_cache not found, context clearing disabled")
+    logger.warning("[effects_batch_director] utils.ollama_cache not found, context clearing disabled")
     def clear_ollama_model_context(model: str):
-        """Fallback no-op if clear_ollama_cache module is missing."""
+        """Fallback no-op if utils.ollama_cache module is missing."""
         pass
 
 

@@ -39,7 +39,14 @@ from pipeline.renderer.effects_batch_director import get_effect_plans_batched
 from pipeline.renderer.deepseek_effects_director import get_custom_effect_code, DeepSeekEffectsDirector
 from pipeline.renderer.effects_tools import TOOLS_REGISTRY
 from pipeline.director_agent import choose_effects_system
-from iterative_effects_planner import EnhancedIterativeEffectsPlanner
+
+# Try to import iterative effects planner (optional feature)
+try:
+    from pipeline.renderer.iterative_effects_director import EnhancedIterativeEffectsPlanner
+    ITERATIVE_PLANNER_AVAILABLE = True
+except ImportError:
+    ITERATIVE_PLANNER_AVAILABLE = False
+    EnhancedIterativeEffectsPlanner = None
 
 logger = setup_logger(__name__)
 
@@ -752,12 +759,16 @@ def render_final_video(segments: List[VideoSegment], audio_file: str, output_nam
 
                     if effects_system == "iterative":
                         # Use iterative effects planner for fantasy/sci-fi/complex content
-                        logger.info(f"[video_generator] Using iterative effects planner for segment {i}")
-                        planner = EnhancedIterativeEffectsPlanner(
-                            model="llama3",
-                            max_iterations=3,
-                            allow_custom_code=False  # Stick to pre-built effects for safety
-                        )
+                        if not ITERATIVE_PLANNER_AVAILABLE:
+                            logger.warning(f"[video_generator] Iterative planner not available, falling back to batch effects")
+                            effects_system = "batch"  # Fallback to batch planner
+                        else:
+                            logger.info(f"[video_generator] Using iterative effects planner for segment {i}")
+                            planner = EnhancedIterativeEffectsPlanner(
+                                model="llama3",
+                                max_iterations=3,
+                                allow_custom_code=False  # Stick to pre-built effects for safety
+                            )
 
                         # Convert segment to dict format expected by planner
                         seg_dict = {
@@ -938,13 +949,13 @@ def render_final_video(segments: List[VideoSegment], audio_file: str, output_nam
             processed_clips.append(clip)
         
         # Concatenate clips sequentially (no overlap, preserves total duration)
-        final_video = concatenate_videoclips(processed_clips, method="compose")
+        final_video = concatenate_videoclips(processed_clips, method="chain")
         
         logger.info(f"[video_generator] Timeline built: duration={final_video.duration:.3f}s, target={total_json_duration:.3f}s")
     else:
         # No transitions: simple concatenation
         logger.info(f"[video_generator] No crossfades, using simple concatenation")
-        final_video = concatenate_videoclips(video_clips, method="compose")
+        final_video = concatenate_videoclips(video_clips, method="chain")
 
     audio_clip = None
     if os.path.exists(audio_file):
@@ -998,7 +1009,8 @@ def render_final_video(segments: List[VideoSegment], audio_file: str, output_nam
         "fps": FPS,
         "codec": VIDEO_CODEC,
         "audio_codec": AUDIO_CODEC,
-        "threads": 4,
+        "threads": 16,  # Increased from 4 to 16 for better multi-core utilization
+        "verbose": False,  # Reduce console output for cleaner logs
         # Keep logger enabled to see progress (set to None to hide progress bar)
     }
     
