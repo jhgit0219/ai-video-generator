@@ -42,6 +42,16 @@ from prompts import CLIP_LABEL_GENERATION_TEMPLATE
 
 logger = setup_logger(__name__)
 
+# Try to import YOLO for subject validation (optional)
+try:
+    from ultralytics import YOLO
+    YOLO_AVAILABLE = True
+    _yolo_model = None
+    _YOLO_WEIGHTS_PATH = "weights/yolo11x-seg.pt"
+except ImportError:
+    YOLO_AVAILABLE = False
+    logger.warning("[ai_filter] YOLO not available - subject validation disabled")
+
 # Paths
 os.makedirs(CACHE_DIR, exist_ok=True)
 Path(CACHE_DIR).mkdir(parents=True, exist_ok=True)
@@ -488,6 +498,81 @@ def _build_prompt(segment: Any) -> str:
     logger.debug(f"[clip_ranker] Built ranking prompt: '{prompt}'")
     return prompt
 
+def _validate_required_subjects(image_path: str, required_subjects: List[str]) -> Tuple[bool, List[str]]:
+    """
+    Validate that required subjects are present in the image using YOLO detection.
+
+    :param image_path: Path to the image file
+    :param required_subjects: List of required subjects (e.g., ['young girl', 'cat', 'ancient map'])
+    :return: (is_valid, detected_subjects) tuple
+    """
+    if not YOLO_AVAILABLE or not required_subjects:
+        return True, []  # Skip validation if YOLO unavailable or no requirements
+
+    global _yolo_model
+    if _yolo_model is None:
+        try:
+            _yolo_model = YOLO(_YOLO_WEIGHTS_PATH)
+            logger.info(f"[ai_filter] Loaded YOLO model from {_YOLO_WEIGHTS_PATH}")
+        except Exception as e:
+            logger.warning(f"[ai_filter] Failed to load YOLO model: {e}")
+            return True, []  # Fallback to no validation
+
+    try:
+        # Run YOLO detection
+        results = _yolo_model(image_path, verbose=False)
+        if not results or len(results) == 0:
+            return False, []
+
+        # Extract detected class names
+        detected_classes = []
+        for result in results:
+            if result.boxes is not None:
+                for box in result.boxes:
+                    class_id = int(box.cls[0])
+                    class_name = result.names[class_id]
+                    detected_classes.append(class_name.lower())
+
+        # Map required subjects to YOLO class names
+        subject_mapping = {
+            'young girl': ['person'],
+            'girl': ['person'],
+            'boy': ['person'],
+            'child': ['person'],
+            'man': ['person'],
+            'woman': ['person'],
+            'cat': ['cat'],
+            'dog': ['dog'],
+            'horse': ['horse'],
+            'ancient map': ['book'],  # Maps often detected as books
+            'map': ['book'],
+            'book': ['book'],
+        }
+
+        # Check if required subjects are detected
+        detected_subjects = []
+        for subject in required_subjects:
+            subject_lower = subject.lower()
+            expected_classes = subject_mapping.get(subject_lower, [subject_lower])
+
+            # Check if any expected class is in detected classes
+            if any(exp_class in detected_classes for exp_class in expected_classes):
+                detected_subjects.append(subject)
+
+        # Consider valid if at least one required subject is detected
+        is_valid = len(detected_subjects) > 0
+
+        if not is_valid:
+            logger.debug(f"[ai_filter] Image failed subject validation - required: {required_subjects}, detected: {detected_classes}")
+        else:
+            logger.debug(f"[ai_filter] Image passed subject validation - matched: {detected_subjects}")
+
+        return is_valid, detected_subjects
+
+    except Exception as e:
+        logger.warning(f"[ai_filter] Subject validation failed: {e}")
+        return True, []  # Fallback to accepting image on error
+
 def _rank_for_segment(segment: Any, labels: Dict[str, List[str]]) -> Dict[str, Any]:
     """Rank images for a segment and generate CLIP caption using provided labels."""
     prompt = _build_prompt(segment)
@@ -539,6 +624,8 @@ def _rank_for_segment(segment: Any, labels: Dict[str, List[str]]) -> Dict[str, A
         else:
             ranked = []
 
+    # Select top-ranked image (no subject validation at ranking stage)
+    # Subject validation happens later, on-demand when effects require it (e.g., zoom_on_subject)
     best_entry = ranked[0] if ranked else {}
 
     # Persist best on the segment object for downstream modules

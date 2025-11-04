@@ -1,0 +1,46 @@
+[
+  {
+    "name": "subject_outline",
+    "params": {
+      "color": [57, 255, 20],
+      "thickness": 8,
+      "glow": 14,
+      "animate_in": 0.4
+    }
+  },
+  {
+    "name": "subject_pop",
+    "params": {
+      "scale": 1.2,
+      "pop_duration": 0.45,
+      "shadow_opacity": 0.35
+    }
+  },
+  {
+    "name": "zoom_on_subject",
+    "params": {
+      "target_scale": 1.5,
+      "speed_curve": "easeInOut"
+    }
+  },
+  {
+    "name": "neon_overlay",
+    "params": {
+      "color": [57, 255, 20],
+      "opacity": 0.35,
+      "animate_in": 0.5,
+      "blend_mode": "add"
+    }
+  },
+  {
+    "name": "paneled_text",
+    "params": {
+      "text": "Your Title Here",
+      "side": "right",
+      "fontsize": 56,
+      "panel_opacity": 0.6,
+      "border_color": [57, 255, 20],
+      "animate_in": 0.3
+    }
+  }
+]

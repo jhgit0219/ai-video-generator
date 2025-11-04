@@ -47,7 +47,7 @@ MAX_SCRAPED_IMAGES = 3       # total images per query (successful downloads)
 SCROLL_PAUSES = 3                # number of scroll actions per search
 SCROLL_SLEEP = 1.5               # time between scrolls
 GOOGLE_IMAGE_BATCH_SIZE = 20     # images per scroll batch
-PLAYWRIGHT_HEADFUL = True        # debug mode for scraping
+PLAYWRIGHT_HEADFUL = False        # debug mode for scraping
 SEARCH_ENGINE_URL = "https://www.google.com/search?tbm=isch&q="
 THUMBNAIL_ATTEMPT_LIMIT = 10     # max thumbnails to attempt per query before stopping
 MAX_SCROLL_ROUNDS = 3            # safety cap for scroll/pagination rounds
@@ -112,7 +112,12 @@ DEVICE = "cuda"  # Automatically falls back to "cpu" if GPU unavailable
 
 # Effects director (LLM-driven effects selection)
 USE_LLM_EFFECTS = True      # When True, use offline LLM to choose per-segment effects
+USE_MICRO_BATCHING = True   # When True, batch segments together (10x fewer API calls, 78% token savings)
+EFFECTS_BATCH_SIZE = 10     # Number of segments per batch (default 10 = ~3.5K tokens per batch)
+USE_DEEPSEEK_EFFECTS = False  # When True, use DeepSeek for ALL segments (expensive, disables batching)
+USE_DEEPSEEK_SELECTIVE = False  # When True, use DeepSeek ONLY for complex segments flagged by batch planner
 EFFECTS_LLM_MODEL = "llama3"  # Ollama model name
+DEEPSEEK_MODEL = "deepseek-coder:6.7b"  # DeepSeek model for code generation
 
 # Ranking weights and behavior
 # Increase CLIP weight to prioritize semantic relevance over resolution

@@ -16,6 +16,7 @@ ENV/
 # IDE/editor
 .vscode/
 .idea/
+.claude/
 *.iml
 
 # OS files
@@ -29,6 +30,22 @@ htmlcov/
 .tox/
 .mypy_cache/
 *test*.py
+*test*.txt
+*test*.log
+
+# Session artifacts and planning documents
+FIX_*.md
+FIXES_*.md
+PLAN_*.md
+IMPLEMENTATION_*.md
+*_PLAN_*.md
+context_state.json
+cleanup_*.py
+clear_*.py
+outline_*.py
+
+# Unused/future features (keep locally, don't commit yet)
+pipeline/checkpoint.py
 
 # Configuration with sensitive data
 config.py

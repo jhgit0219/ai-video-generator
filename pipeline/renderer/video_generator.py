@@ -21,6 +21,11 @@ from config import (
     AUDIO_CODEC,
     PRESET,
     USE_LLM_EFFECTS,
+    USE_MICRO_BATCHING,
+    EFFECTS_BATCH_SIZE,
+    USE_DEEPSEEK_EFFECTS,
+    USE_DEEPSEEK_SELECTIVE,
+    DEEPSEEK_MODEL,
     DURATION_MODE,
     FINAL_DURATION_TOLERANCE,
     DEFAULT_TRANSITION_TYPE,
@@ -29,7 +34,12 @@ from config import (
     ENABLE_AI_UPSCALE,
     ENABLE_SIMPLE_SHARPEN,
 )
-from pipeline.renderer.effects_director import get_effect_plan
+from pipeline.renderer.effects_director import get_effect_plan, reset_character_tracker
+from pipeline.renderer.effects_batch_director import get_effect_plans_batched
+from pipeline.renderer.deepseek_effects_director import get_custom_effect_code, DeepSeekEffectsDirector
+from pipeline.renderer.effects_tools import TOOLS_REGISTRY
+from pipeline.director_agent import choose_effects_system
+from iterative_effects_planner import EnhancedIterativeEffectsPlanner
 
 logger = setup_logger(__name__)
 
@@ -157,15 +167,82 @@ class CinematicEffectsAgent:
 
         return enhanced
 
-    def apply_plan(self, clip: ImageClip, plan: dict) -> ImageClip:
-        """Apply an LLM-provided plan to a clip."""
+    def apply_plan(self, clip: ImageClip, plan: dict, segment=None) -> ImageClip:
+        """Apply an LLM-provided plan to a clip.
+
+        CRITICAL: Effects are applied in a specific order to avoid visual artifacts.
+        See EFFECTS_ORDERING_REFERENCE.md for detailed explanation.
+
+        Order: Baked Effects → Geometric Reframing → Motion → Late Overlays → Fades
+
+        Args:
+            clip: Input video clip
+            plan: Effect plan dict with motion, overlays, fades, tools
+            segment: Optional VideoSegment for subject detection in overlays
+
+        Returns:
+            Enhanced clip with effects applied
+        """
         motion = (plan or {}).get("motion", "ken_burns_in")
         overlays = (plan or {}).get("overlays", []) or []
         fade_in = float((plan or {}).get("fade_in", 0))
         fade_out = float((plan or {}).get("fade_out", 0))
+        tools = (plan or {}).get("tools", []) or []  # optional advanced tools with params
 
         enhanced = clip
-        # Motion
+
+        # ===== STAGE 2: BAKED IMAGE EFFECTS (move with camera) =====
+        # These are painted onto the base image and will move during pans/zooms
+
+        # Subject outline - MUST be before motion so it moves with the image
+        if "subject_outline" in overlays:
+            try:
+                fn = TOOLS_REGISTRY.get("subject_outline")
+                if fn:
+                    # Determine target subject from segment required_subjects
+                    target_subject = None
+                    if segment and hasattr(segment, 'required_subjects') and segment.required_subjects:
+                        # Use first subject as primary target (e.g., "cat", "young girl")
+                        target_subject = segment.required_subjects[0]
+                        logger.info(f"[effects] subject_outline targeting: {target_subject}")
+
+                    enhanced = fn(enhanced, target=target_subject)
+                    logger.info("[effects] Applied subject_outline (baked, will move with motion)")
+            except Exception as e:
+                logger.warning(f"[effects] subject_outline failed: {e}")
+
+        # Neon overlay - edge detection glow, baked into image
+        if "neon_overlay" in overlays:
+            try:
+                fn = TOOLS_REGISTRY.get("neon_overlay")
+                if fn:
+                    enhanced = fn(enhanced)
+                    logger.info("[effects] Applied neon_overlay (baked)")
+            except Exception as e:
+                logger.warning(f"[effects] neon_overlay failed: {e}")
+
+        # Film grain - texture overlay, baked into image
+        if "film_grain" in overlays:
+            enhanced = self._apply_film_grain(enhanced)
+            logger.info("[effects] Applied film_grain (baked)")
+
+        # ===== STAGE 3: GEOMETRIC REFRAMING (tools with params) =====
+        # These change composition but preserve aspect ratio
+        for tool in tools:
+            try:
+                if not isinstance(tool, dict):
+                    continue
+                name = str(tool.get("name", "")).strip()
+                params = tool.get("params", {}) or {}
+                fn = TOOLS_REGISTRY.get(name)
+                if fn:
+                    enhanced = fn(enhanced, **params)
+                    logger.info(f"[effects] Applied tool: {name} with params {params}")
+            except Exception as e:
+                logger.warning(f"[effects] tool '{tool}' failed: {e}")
+
+        # ===== STAGE 4: CAMERA MOTION (virtual camera movement) =====
+        # Motion effects upscale uniformly then pan/zoom within the canvas
         if motion == "ken_burns_in":
             enhanced = self._ken_burns_zoom_in(enhanced)
         elif motion == "ken_burns_out":
@@ -184,13 +261,68 @@ class CinematicEffectsAgent:
             # static, keep as-is
             pass
 
-        # Overlays
+        # ===== STAGE 6: LATE OVERLAYS (frame-locked, after motion) =====
+        # These stay locked to frame corners and don't move with pans
+
+        # Vignette - frame-locked dark corners
         if "vignette" in overlays:
             enhanced = self._apply_vignette(enhanced)
-        if "film_grain" in overlays:
-            enhanced = self._apply_film_grain(enhanced)
+            logger.info("[effects] Applied vignette (late overlay, frame-locked)")
 
-        # Fades
+        # Color grading overlays (late, after all motion)
+        if "warm_grade" in overlays:
+            try:
+                fn = TOOLS_REGISTRY.get("warm_grade")
+                if fn:
+                    enhanced = fn(enhanced, intensity=0.6)
+            except Exception as e:
+                logger.warning(f"[effects] warm_grade failed: {e}")
+        if "cool_grade" in overlays:
+            try:
+                fn = TOOLS_REGISTRY.get("cool_grade")
+                if fn:
+                    enhanced = fn(enhanced, intensity=0.6)
+            except Exception as e:
+                logger.warning(f"[effects] cool_grade failed: {e}")
+        if "desaturated_grade" in overlays:
+            try:
+                fn = TOOLS_REGISTRY.get("desaturated_grade")
+                if fn:
+                    enhanced = fn(enhanced, intensity=0.5)
+            except Exception as e:
+                logger.warning(f"[effects] desaturated_grade failed: {e}")
+        if "teal_orange_grade" in overlays:
+            try:
+                fn = TOOLS_REGISTRY.get("teal_orange_grade")
+                if fn:
+                    enhanced = fn(enhanced)
+            except Exception as e:
+                logger.warning(f"[effects] teal_orange_grade failed: {e}")
+
+        # Flash/pulse effects (late overlays)
+        if "quick_flash" in overlays:
+            try:
+                fn = TOOLS_REGISTRY.get("quick_flash")
+                if fn:
+                    enhanced = fn(enhanced, flash_time=min(1.0, enhanced.duration * 0.3))
+            except Exception as e:
+                logger.warning(f"[effects] quick_flash failed: {e}")
+        if "flash_pulse" in overlays:
+            try:
+                fn = TOOLS_REGISTRY.get("flash_pulse")
+                if fn:
+                    enhanced = fn(enhanced, intensity=0.6, frequency=1.5)
+            except Exception as e:
+                logger.warning(f"[effects] flash_pulse failed: {e}")
+        if "strobe_effect" in overlays:
+            try:
+                fn = TOOLS_REGISTRY.get("strobe_effect")
+                if fn:
+                    enhanced = fn(enhanced, frequency=3.0, intensity=0.5)
+            except Exception as e:
+                logger.warning(f"[effects] strobe_effect failed: {e}")
+
+        # ===== FADES (can be applied anytime, but typically last) =====
         if fade_in > 0:
             enhanced = self._fade_in(enhanced, fade_in)
         if fade_out > 0:
@@ -293,50 +425,80 @@ class CinematicEffectsAgent:
     # ---------- Pan Effects ----------
 
     def _pan_horizontal(self, clip: ImageClip, direction: str) -> ImageClip:
-        """Smooth horizontal pan using MoviePy's resize positioning."""
+        """Smooth horizontal pan with uniform upscale to avoid distortion and black bars."""
         duration = clip.duration
-        # Use clip's actual size (RENDER_SIZE) instead of hardcoded IMAGE_SIZE
         w, h = clip.size
-        
-        def position(t):
-            progress = t / duration
+
+        # Uniform scale factor to create pan room (15%) without changing aspect ratio
+        scale = 1.15
+        new_w = int(round(w * scale))
+        new_h = int(round(h * scale))
+        max_x = max(0, new_w - w)
+
+        def transform_frame(get_frame, t):
+            progress = t / max(1e-6, duration)
             # Smooth easing function (ease in-out)
             progress = progress * progress * (3 - 2 * progress)
-            
-            # Pan by 15% of width
+
+            frame = get_frame(t)
+            if frame.dtype != np.uint8:
+                frame = frame.astype(np.uint8)
+
+            # Uniform upscale, then crop
+            img = Image.fromarray(frame).resize((new_w, new_h), Image.Resampling.LANCZOS)
+            # Horizontal pan amount across the available room
             if direction == "left_to_right":
-                x_offset = -int(w * 0.15 * (1 - progress))
+                x1 = int(round(max_x * progress))
             else:  # right_to_left
-                x_offset = -int(w * 0.15 * progress)
-            
-            return (x_offset, 'center')
-        
-        # Resize clip to 115% width to allow for pan room
-        resized = clip.resized(width=int(w * 1.15), height=h)
-        return resized.with_position(position)
+                x1 = int(round(max_x * (1.0 - progress)))
+            x1 = max(0, min(max_x, x1))
+            x2 = x1 + w
+            # Keep vertical crop centered
+            y1 = (new_h - h) // 2
+            y2 = y1 + h
+
+            cropped = np.array(img)[y1:y2, x1:x2]
+            return cropped
+
+        return clip.transform(transform_frame)
 
     def _pan_vertical(self, clip: ImageClip, direction: str) -> ImageClip:
-        """Smooth vertical pan using MoviePy's resize positioning."""
+        """Smooth vertical pan with uniform upscale to avoid distortion and black bars."""
         duration = clip.duration
-        # Use clip's actual size (RENDER_SIZE) instead of hardcoded IMAGE_SIZE
         w, h = clip.size
-        
-        def position(t):
-            progress = t / duration
+
+        # Uniform scale factor to create pan room (15%) without changing aspect ratio
+        scale = 1.15
+        new_w = int(round(w * scale))
+        new_h = int(round(h * scale))
+        max_y = max(0, new_h - h)
+
+        def transform_frame(get_frame, t):
+            progress = t / max(1e-6, duration)
             # Smooth easing function (ease in-out)
             progress = progress * progress * (3 - 2 * progress)
-            
-            # Pan by 15% of height
+
+            frame = get_frame(t)
+            if frame.dtype != np.uint8:
+                frame = frame.astype(np.uint8)
+
+            # Uniform upscale, then crop
+            img = Image.fromarray(frame).resize((new_w, new_h), Image.Resampling.LANCZOS)
+            # Vertical pan amount across the available room
             if direction == "down":
-                y_offset = -int(h * 0.15 * (1 - progress))
+                y1 = int(round(max_y * progress))
             else:  # up
-                y_offset = -int(h * 0.15 * progress)
-            
-            return ('center', y_offset)
-        
-        # Resize clip to 115% height to allow for pan room
-        resized = clip.resized(width=w, height=int(h * 1.15))
-        return resized.with_position(position)
+                y1 = int(round(max_y * (1.0 - progress)))
+            y1 = max(0, min(max_y, y1))
+            y2 = y1 + h
+            # Keep horizontal crop centered
+            x1 = (new_w - w) // 2
+            x2 = x1 + w
+
+            cropped = np.array(img)[y1:y2, x1:x2]
+            return cropped
+
+        return clip.transform(transform_frame)
 
     def _zoom_pan(self, clip: ImageClip) -> ImageClip:
         """Combined zoom in with diagonal pan for dynamic energy with smooth easing."""
@@ -502,16 +664,19 @@ class CinematicEffectsAgent:
 
 def render_final_video(segments: List[VideoSegment], audio_file: str, output_name: str = None) -> str:
     """Render final cinematic video with effects.
-    
+
     Args:
         segments: List of video segments to render
         audio_file: Path to audio file
         output_name: Optional custom output filename (without extension)
-    
+
     Returns:
         Path to rendered video file
     """
     logger.info("[video_generator] Starting final video rendering with cinematic effects")
+
+    # Reset character introduction tracker for new video
+    reset_character_tracker()
 
     output_dir = Path("data/output")
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -519,9 +684,20 @@ def render_final_video(segments: List[VideoSegment], audio_file: str, output_nam
     video_clips = []
     plans = []  # holds effect/transition plans per segment (may be None)
     transitions = []  # per-segment transition dicts (to next clip)
-    
+
     # Use the last segment's end_time as the target duration
     total_json_duration = float(segments[-1].end_time) if segments else 0.0
+
+    # Pre-compute all effect plans using micro-batching if enabled
+    precomputed_plans = None
+    if USE_LLM_EFFECTS and USE_MICRO_BATCHING and not USE_DEEPSEEK_EFFECTS:
+        logger.info(f"[video_generator] Pre-computing effect plans for {len(segments)} segments using micro-batching (batch_size={EFFECTS_BATCH_SIZE})")
+        precomputed_plans = get_effect_plans_batched(
+            segments,
+            batch_size=EFFECTS_BATCH_SIZE,
+            visual_style="cinematic"  # TODO: Could extract from content analysis
+        )
+        logger.info(f"[video_generator] Micro-batching complete: {len([p for p in precomputed_plans if p])} valid plans generated")
 
     for i, seg in enumerate(segments):
         logger.info(f"[video_generator] Processing segment {i}...")
@@ -554,17 +730,108 @@ def render_final_video(segments: List[VideoSegment], audio_file: str, output_nam
                 else:
                     clip = ImageClip(seg.selected_image, duration=seg_dur)
                     clip = clip.resized(width=RENDER_SIZE[0], height=RENDER_SIZE[1])
-            # Effect selection: LLM plan if enabled, otherwise heuristics
+            # Effect selection: Micro-batched LLM effects with selective DeepSeek enhancement
             plan = None
+            needs_custom_code = False  # Flag to trigger DeepSeek for complex segments
+
+            # STEP 1: Get base plan from batching or per-segment LLM
             if USE_LLM_EFFECTS:
-                plan = get_effect_plan(seg, i, len(segments))
-                if plan:
-                    enhanced = effects_agent.apply_plan(clip, plan)
+                # Use precomputed plan from micro-batching if available
+                if precomputed_plans is not None and i < len(precomputed_plans):
+                    plan = precomputed_plans[i]
+                    if plan:
+                        logger.info(f"[video_generator] Using precomputed plan from micro-batching for segment {i}")
+                        # Check if plan requests custom code generation
+                        needs_custom_code = plan.get("needs_custom_code", False)
+                    else:
+                        logger.warning(f"[video_generator] Precomputed plan was None, using fallback for segment {i}")
                 else:
-                    enhanced = effects_agent.apply_context_effect(clip, seg, i, len(segments))
+                    # Fallback to per-segment planning (when batching disabled or iterative planner needed)
+                    # Choose effects system based on content analysis
+                    effects_system = choose_effects_system(seg)
+
+                    if effects_system == "iterative":
+                        # Use iterative effects planner for fantasy/sci-fi/complex content
+                        logger.info(f"[video_generator] Using iterative effects planner for segment {i}")
+                        planner = EnhancedIterativeEffectsPlanner(
+                            model="llama3",
+                            max_iterations=3,
+                            allow_custom_code=False  # Stick to pre-built effects for safety
+                        )
+
+                        # Convert segment to dict format expected by planner
+                        seg_dict = {
+                            "transcript": seg.transcript,
+                            "duration": seg.duration,
+                            "topic": getattr(seg, 'topic', ''),
+                            "content_type": getattr(seg, 'content_type', ''),
+                            "reasoning": getattr(seg, 'reasoning', ''),
+                            "visual_description": getattr(seg, 'visual_description', '')
+                        }
+
+                        plan = planner.plan_effects(seg_dict, i, len(segments))
+                        if plan:
+                            enhanced = effects_agent.apply_plan(clip, plan, segment=seg)
+                        else:
+                            logger.warning(f"[video_generator] Iterative planner failed, using fallback")
+                            enhanced = effects_agent.apply_context_effect(clip, seg, i, len(segments))
+                    else:
+                        # Use standard effects director for documentary/realistic content
+                        logger.info(f"[video_generator] Using standard effects director for segment {i}")
+                        plan = get_effect_plan(seg, i, len(segments))
+                        if plan:
+                            enhanced = effects_agent.apply_plan(clip, plan, segment=seg)
+                        else:
+                            enhanced = effects_agent.apply_context_effect(clip, seg, i, len(segments))
             else:
+                plan = {}
+
+            # STEP 2: Apply effects (standard or DeepSeek-enhanced)
+            if (USE_DEEPSEEK_EFFECTS or (USE_DEEPSEEK_SELECTIVE and needs_custom_code)) and plan:
+                # Use DeepSeek to generate custom code (either for all segments or selectively)
+                try:
+                    sample_frame = clip.get_frame(0)
+                except:
+                    sample_frame = None
+
+                reason = "planner requested custom code" if needs_custom_code else "USE_DEEPSEEK_EFFECTS enabled"
+                custom_desc = plan.get("custom_effect_description", "N/A")
+                logger.info(f"[video_generator] Generating custom DeepSeek effect for segment {i + 1} ({reason})")
+                if needs_custom_code:
+                    logger.info(f"[video_generator] Custom effect requirement: {custom_desc}")
+                generated_effect = get_custom_effect_code(seg, i, len(segments), sample_frame)
+
+                if generated_effect and generated_effect.is_valid:
+                    director = DeepSeekEffectsDirector(model=DEEPSEEK_MODEL)
+                    enhanced = director.execute_effect(generated_effect, clip, segment=seg)
+                    if enhanced is None:
+                        logger.warning(f"[video_generator] DeepSeek effect failed, applying standard plan")
+                        enhanced = effects_agent.apply_plan(clip, plan, segment=seg) if plan else effects_agent.apply_context_effect(clip, seg, i, len(segments))
+                    plan["custom_effect"] = generated_effect.name
+                else:
+                    logger.warning(f"[video_generator] DeepSeek generation failed, applying standard plan")
+                    enhanced = effects_agent.apply_plan(clip, plan, segment=seg) if plan else effects_agent.apply_context_effect(clip, seg, i, len(segments))
+            elif plan:
+                # Apply standard batched plan
+                enhanced = effects_agent.apply_plan(clip, plan, segment=seg)
+            else:
+                # Fallback to heuristic effects
                 enhanced = effects_agent.apply_context_effect(clip, seg, i, len(segments))
+
             plans.append(plan)
+
+            # Optional: apply custom tools specified directly on the segment
+            try:
+                custom_tools = getattr(seg, "custom_effects", None) or []
+                for tool in custom_tools:
+                    if isinstance(tool, dict):
+                        name = str(tool.get("name", "")).strip()
+                        params = tool.get("params", {}) or {}
+                        fn = TOOLS_REGISTRY.get(name)
+                        if fn:
+                            enhanced = fn(enhanced, **params)
+            except Exception as e:
+                logger.warning(f"[effects] custom_effects failed for segment {i}: {e}")
 
             # CRITICAL: Resize/crop to RENDER_SIZE AFTER effects (zoom-to-cover, no black bars)
             # Ken Burns needs the large canvas to pan/zoom, so we resize last
