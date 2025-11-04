@@ -12,7 +12,7 @@ from PIL import Image
 from moviepy import *
 from utils.logger import setup_logger
 from pipeline.parser import VideoSegment
-from pipeline.renderer.image_enhancer import enhance_image
+from pipeline.renderer.image_enhancer import enhance_image, enhance_images_batch
 from config import (
     IMAGE_SIZE,
     RENDER_SIZE,
@@ -706,6 +706,23 @@ def render_final_video(segments: List[VideoSegment], audio_file: str, output_nam
         )
         logger.info(f"[video_generator] Micro-batching complete: {len([p for p in precomputed_plans if p])} valid plans generated")
 
+    # Batch enhance all images upfront (2-4x faster than one-by-one)
+    enhanced_images_cache = {}
+    if ENABLE_AI_UPSCALE or ENABLE_SIMPLE_SHARPEN:
+        image_paths = [seg.selected_image for seg in segments
+                      if seg.selected_image and os.path.exists(seg.selected_image)]
+
+        if image_paths:
+            logger.info(f"[video_generator] Batch-enhancing {len(image_paths)} images at render size (this is faster than one-by-one)")
+            enhanced_batch = enhance_images_batch(image_paths, RENDER_SIZE)
+
+            # Store in dict for O(1) lookup
+            for img_path, enhanced_img in zip(image_paths, enhanced_batch):
+                if enhanced_img:
+                    enhanced_images_cache[img_path] = enhanced_img
+
+            logger.info(f"[video_generator] Batch enhancement complete: {len(enhanced_images_cache)} images ready")
+
     for i, seg in enumerate(segments):
         logger.info(f"[video_generator] Processing segment {i}...")
         missing_image = (not seg.selected_image or not os.path.exists(seg.selected_image))
@@ -720,10 +737,9 @@ def render_final_video(segments: List[VideoSegment], audio_file: str, output_nam
                 # ColorClip size: (width, height)
                 clip = ColorClip(size=(RENDER_SIZE[0], RENDER_SIZE[1]), color=(0, 0, 0), duration=seg_dur)
             else:
-                # Enhance image at render size
+                # Use batch-enhanced image from cache (already processed upfront)
                 if ENABLE_AI_UPSCALE or ENABLE_SIMPLE_SHARPEN:
-                    logger.debug(f"   Enhancing image for segment {i} at render size")
-                    enhanced_img = enhance_image(seg.selected_image, RENDER_SIZE)
+                    enhanced_img = enhanced_images_cache.get(seg.selected_image)
                     if enhanced_img:
                         # Convert PIL Image to numpy array for MoviePy
                         # Keep the large size for ken_burns effects to work properly
@@ -731,7 +747,8 @@ def render_final_video(segments: List[VideoSegment], audio_file: str, output_nam
                         clip = ImageClip(img_array, duration=seg_dur)
                         logger.debug(f"   Loaded clip size: {clip.size} (will resize after effects)")
                     else:
-                        # Fallback to original if enhancement fails
+                        # Fallback to original if enhancement was not in cache
+                        logger.warning(f"   Enhanced image not found in cache for segment {i}, loading original")
                         clip = ImageClip(seg.selected_image, duration=seg_dur)
                         clip = clip.resized(width=RENDER_SIZE[0], height=RENDER_SIZE[1])
                 else:
@@ -1010,7 +1027,7 @@ def render_final_video(segments: List[VideoSegment], audio_file: str, output_nam
         "codec": VIDEO_CODEC,
         "audio_codec": AUDIO_CODEC,
         "threads": 16,  # Increased from 4 to 16 for better multi-core utilization
-        "verbose": False,  # Reduce console output for cleaner logs
+        # Note: 'verbose' param not available in this MoviePy version
         # Keep logger enabled to see progress (set to None to hide progress bar)
     }
     
