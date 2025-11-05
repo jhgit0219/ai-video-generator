@@ -8,6 +8,7 @@ character_highlight) without manual configuration.
 from typing import List, Dict, Any, Optional
 from pipeline.parser import VideoSegment
 from pipeline.nlp.entity_extractor import EntityExtractor
+from pipeline.nlp.character_inference import CharacterInferenceEngine
 from utils.logger import setup_logger
 
 logger = setup_logger(__name__)
@@ -24,7 +25,8 @@ class ContentAwareEffectsDirector:
     def __init__(self):
         """Initialize content-aware effects director."""
         self.entity_extractor = EntityExtractor()
-        logger.info("[content_aware_effects] Initialized with spaCy NER")
+        self.character_inference = CharacterInferenceEngine()
+        logger.info("[content_aware_effects] Initialized with spaCy NER and character inference")
 
     def analyze_segments(self, segments: List[VideoSegment]) -> None:
         """Analyze segments for entity mentions and mark first occurrences.
@@ -47,6 +49,15 @@ class ContentAwareEffectsDirector:
 
             segment.detected_locations = entities["locations"]
             segment.detected_persons = entities["persons"]
+
+            # Enhance person names with context (e.g., "Herodotus" -> "Greek historian Herodotus")
+            if segment.detected_persons:
+                segment.detected_persons_enhanced = self.character_inference.enhance_persons_with_context(
+                    segment.detected_persons,
+                    segment.transcript
+                )
+                logger.debug(f"[content_aware_effects] Segment {idx}: Enhanced persons: "
+                            f"{segment.detected_persons} -> {segment.detected_persons_enhanced}")
 
             # Check for first mentions
             if segment.detected_locations:
