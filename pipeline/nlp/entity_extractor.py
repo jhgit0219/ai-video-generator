@@ -3,6 +3,7 @@
 from typing import Dict, List, Set, Optional
 import spacy
 from utils.logger import setup_logger
+from pipeline.nlp.entity_cache import EntityCache
 
 logger = setup_logger(__name__)
 
@@ -14,10 +15,11 @@ class EntityExtractor:
     content-aware effect application (e.g., map highlight on first location mention).
     """
 
-    def __init__(self, model_name: str = "en_core_web_sm"):
+    def __init__(self, model_name: str = "en_core_web_sm", enable_cache: bool = True):
         """Initialize entity extractor with spaCy model.
 
         :param model_name: spaCy model to use for NER.
+        :param enable_cache: Enable caching of extraction results.
         """
         try:
             self.nlp = spacy.load(model_name)
@@ -33,6 +35,12 @@ class EntityExtractor:
             "person": set(),
         }
 
+        # Initialize cache
+        self.enable_cache = enable_cache
+        self._cache = EntityCache(max_size=100) if enable_cache else None
+        if enable_cache:
+            logger.info("[entity_extractor] Entity caching enabled")
+
     def extract_entities(
         self,
         text: str,
@@ -44,6 +52,14 @@ class EntityExtractor:
         :param segment_idx: Optional segment index for logging.
         :return: Dict with 'locations' and 'persons' lists.
         """
+        if self.enable_cache and self._cache:
+            cached = self._cache.get(text)
+            if cached is not None:
+                if segment_idx is not None:
+                    logger.info(f"[entity_extractor] Segment {segment_idx}: "
+                               f"Using cached result")
+                return cached
+
         doc = self.nlp(text)
 
         locations = []
@@ -51,7 +67,6 @@ class EntityExtractor:
 
         for ent in doc.ents:
             if ent.label_ in ("GPE", "LOC", "FAC"):
-                # GPE: Geo-political entity, LOC: Location, FAC: Facility
                 location = ent.text.strip()
                 if location and location not in locations:
                     locations.append(location)
@@ -63,14 +78,19 @@ class EntityExtractor:
                     persons.append(person)
                     logger.debug(f"[entity_extractor] Found person: {person}")
 
+        result = {
+            "locations": locations,
+            "persons": persons,
+        }
+
+        if self.enable_cache and self._cache:
+            self._cache.set(text, result)
+
         if segment_idx is not None:
             logger.info(f"[entity_extractor] Segment {segment_idx}: "
                        f"{len(locations)} locations, {len(persons)} persons")
 
-        return {
-            "locations": locations,
-            "persons": persons,
-        }
+        return result
 
     def is_first_mention(self, entity: str, entity_type: str) -> bool:
         """Check if this is the first mention of an entity.
