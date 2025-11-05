@@ -6,9 +6,11 @@ character_highlight) without manual configuration.
 """
 
 from typing import List, Dict, Any, Optional
+import re
 from pipeline.parser import VideoSegment
 from pipeline.nlp.entity_extractor import EntityExtractor
 from pipeline.nlp.character_inference import CharacterInferenceEngine
+from pipeline.nlp.keyword_extractor import KeywordExtractor
 from utils.logger import setup_logger
 
 logger = setup_logger(__name__)
@@ -26,7 +28,8 @@ class ContentAwareEffectsDirector:
         """Initialize content-aware effects director."""
         self.entity_extractor = EntityExtractor()
         self.character_inference = CharacterInferenceEngine()
-        logger.info("[content_aware_effects] Initialized with spaCy NER and character inference")
+        self.keyword_extractor = KeywordExtractor()
+        logger.info("[content_aware_effects] Initialized with NER, inference, and keyword extraction")
 
     def analyze_segments(self, segments: List[VideoSegment]) -> None:
         """Analyze segments for entity mentions and mark first occurrences.
@@ -106,8 +109,8 @@ class ContentAwareEffectsDirector:
     ) -> None:
         """Inject branding effect tools into effect plan based on entities.
 
-        Modifies effect_plan in-place by adding map_highlight or
-        character_highlight tools as appropriate.
+        Modifies effect_plan in-place by adding map_highlight,
+        character_highlight, or news_overlay tools as appropriate.
 
         :param segment: Segment with entity detection results.
         :param effect_plan: Effect plan dict to modify.
@@ -156,3 +159,51 @@ class ContentAwareEffectsDirector:
 
             effect_plan["tools"].append(char_tool)
             logger.info(f"[content_aware_effects] Injected character_highlight for {person_upper}")
+
+        # Add news_overlay for news-worthy segments
+        self.detect_and_inject_news_overlay(segment, effect_plan)
+
+    def detect_and_inject_news_overlay(
+        self,
+        segment: VideoSegment,
+        effect_plan: Dict[str, Any]
+    ) -> None:
+        """Detect news-worthy segments and inject news overlay effect.
+
+        :param segment: Segment to analyze.
+        :param effect_plan: Effect plan to modify.
+        """
+        if not self.keyword_extractor.is_news_worthy(segment.transcript):
+            return
+
+        # Extract headline and key phrases
+        headline = self.keyword_extractor.extract_headline(segment.transcript)
+        key_phrases = self.keyword_extractor.extract_key_phrases(segment.transcript)
+
+        if not headline:
+            return
+
+        # Split transcript into sentences for body text
+        sentences = re.split(r'[.!?]', segment.transcript)
+        body_text = ". ".join(sentences[1:3]) if len(sentences) > 1 else ""
+
+        news_tool = {
+            "name": "news_overlay",
+            "params": {
+                "headline": headline,
+                "body_text": body_text,
+                "highlighted_phrases": key_phrases,
+                "position": [0.05, 0.6],
+                "size": [0.9, 0.35],
+                "start_time": 0.5,
+                "duration": min(segment.duration - 0.5, 4.0),
+                "fade_in_duration": 0.5,
+                "fade_out_duration": 0.5
+            }
+        }
+
+        if "tools" not in effect_plan:
+            effect_plan["tools"] = []
+
+        effect_plan["tools"].append(news_tool)
+        logger.info(f"[content_aware_effects] Injected news_overlay: '{headline}'")
