@@ -137,3 +137,6 @@ yapf==0.43.0
 yarl==1.22.0
 yolov5==7.0.14
 yolov8==0.0.2
+
+# NLP for entity extraction
+spacy>=3.7.0
