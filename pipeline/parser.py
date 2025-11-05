@@ -42,6 +42,14 @@ class VideoSegment:
         self.processed_path: str = ""        # processed segment video
         self.subtitles: List[str] = []       # optional subtitles
 
+        # Entity detection results (populated by content-aware effects director)
+        self.detected_locations: List[str] = []
+        self.detected_persons: List[str] = []
+        self.is_first_location_mention: bool = False
+        self.is_first_person_mention: bool = False
+        self.first_mentioned_location: Optional[str] = None
+        self.first_mentioned_person: Optional[str] = None
+
 def parse_input(input_json_path: str) -> List[VideoSegment]:
     """
     Parse input JSON file into a list of video segments.
