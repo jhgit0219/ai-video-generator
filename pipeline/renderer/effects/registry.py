@@ -19,6 +19,12 @@ from .overlay_color_grade import (
     apply_desaturated_grade,
     apply_cinematic_teal_orange,
 )
+from .branding import (
+    apply_map_highlight,
+    apply_character_highlight,
+    apply_news_overlay,
+    apply_branded_transition,
+)
 
 TOOLS_REGISTRY: Dict[str, Callable[..., VideoClip]] = {
     # Motion & Zoom
@@ -48,4 +54,10 @@ TOOLS_REGISTRY: Dict[str, Callable[..., VideoClip]] = {
     "cool_grade": apply_cool_grade,
     "desaturated_grade": apply_desaturated_grade,
     "teal_orange_grade": apply_cinematic_teal_orange,
+
+    # Branding Effects
+    "map_highlight": apply_map_highlight,
+    "character_highlight": apply_character_highlight,
+    "news_overlay": apply_news_overlay,
+    "branded_transition": apply_branded_transition,
 }

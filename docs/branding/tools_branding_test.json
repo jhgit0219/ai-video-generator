@@ -1,0 +1,140 @@
+{
+  "description": "Test configuration for branding effects validation",
+  "segments": [
+    {
+      "name": "Map Highlight Test",
+      "description": "Test slime green map location highlight with letter-by-letter animation",
+      "tools": [
+        {
+          "name": "map_highlight",
+          "params": {
+            "location_name": "EGYPT",
+            "box_position": [0.35, 0.25, 0.3, 0.2],
+            "cps": 8,
+            "highlight_duration": 2.5,
+            "fade_to_normal_duration": 1.5,
+            "text_position": "center",
+            "glow_intensity": 0.6
+          }
+        }
+      ]
+    },
+    {
+      "name": "Character Highlight Test",
+      "description": "Test cyan glow character highlight with name label",
+      "tools": [
+        {
+          "name": "character_highlight",
+          "params": {
+            "character_name": "HERODOTUS",
+            "glow_color": [0, 255, 200],
+            "glow_stages": [1.0, 0.6, 0.3],
+            "stage_durations": [0.5, 1.2, 1.8],
+            "label_position": "top",
+            "cps": 10
+          }
+        }
+      ]
+    },
+    {
+      "name": "News Overlay Test",
+      "description": "Test vintage newspaper overlay with green highlights",
+      "tools": [
+        {
+          "name": "news_overlay",
+          "params": {
+            "headline": "Underground City? Giza Pyramids",
+            "subheadline": "Yield New Secrets",
+            "body_text": "Italian Researchers Claim of the Shaft and discoveries beneath the ancient plateau reveal new mysteries.",
+            "highlighted_phrases": ["Underground City", "New Secrets"],
+            "position": [0.05, 0.6],
+            "size": [0.9, 0.35],
+            "start_time": 0.5,
+            "duration": 5.0,
+            "fade_in_duration": 0.5,
+            "fade_out_duration": 0.5
+          }
+        }
+      ]
+    },
+    {
+      "name": "Purple Wipe Transition Test",
+      "description": "Test purple wipe transition",
+      "tools": [
+        {
+          "name": "branded_transition",
+          "params": {
+            "transition_type": "purple_wipe",
+            "direction": "in",
+            "duration": 1.2,
+            "intensity": 0.9
+          }
+        }
+      ]
+    },
+    {
+      "name": "Green Flash Transition Test",
+      "description": "Test neon green flash transition",
+      "tools": [
+        {
+          "name": "branded_transition",
+          "params": {
+            "transition_type": "green_flash",
+            "direction": "both",
+            "duration": 0.8,
+            "intensity": 1.0
+          }
+        }
+      ]
+    },
+    {
+      "name": "Leak Transition Test",
+      "description": "Test purple liquid leak transition",
+      "tools": [
+        {
+          "name": "branded_transition",
+          "params": {
+            "transition_type": "leak_1",
+            "direction": "out",
+            "duration": 1.5,
+            "intensity": 0.8
+          }
+        }
+      ]
+    },
+    {
+      "name": "Combined Effects Test",
+      "description": "Test multiple branding effects together",
+      "tools": [
+        {
+          "name": "branded_transition",
+          "params": {
+            "transition_type": "neon_green",
+            "direction": "in",
+            "duration": 0.6,
+            "intensity": 0.7
+          }
+        },
+        {
+          "name": "character_highlight",
+          "params": {
+            "character_name": "CLEOPATRA",
+            "glow_color": [0, 255, 255],
+            "glow_stages": [1.0, 0.7, 0.4],
+            "stage_durations": [0.4, 0.8, 1.2],
+            "label_position": "bottom"
+          }
+        },
+        {
+          "name": "branded_transition",
+          "params": {
+            "transition_type": "purple_wipe",
+            "direction": "out",
+            "duration": 1.0,
+            "intensity": 0.8
+          }
+        }
+      ]
+    }
+  ]
+}

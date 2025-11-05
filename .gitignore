@@ -29,6 +29,7 @@ Thumbs.db
 htmlcov/
 .tox/
 .mypy_cache/
+custom_test/
 *test*.py
 *test*.txt
 *test*.log
