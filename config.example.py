@@ -38,6 +38,12 @@ SHARPEN_STRENGTH = 1.5        # 1.0 = normal, 1.5 = moderate, 2.0 = strong
 # Cache enhanced images to avoid re-processing (saved in data/temp_images/enhanced_cache/)
 CACHE_ENHANCED_IMAGES = True  # Disable only if you want to force re-enhancement
 
+# Parallel Frame Rendering (for faster video encoding)
+PARALLEL_RENDER_METHOD = "disabled"  # "disk", "pipe", "chunk", or "disabled"
+FRAME_RENDER_WORKERS = None  # Number of workers (None = auto-detect CPU count)
+FRAME_SEQUENCE_QUALITY = 95  # JPEG quality for disk/pipe methods (1-100)
+CHUNK_DURATION = 10  # Seconds per chunk for chunk method
+
 
 # ------------------------------------------------------------
 # Scraper settings
@@ -163,6 +169,19 @@ DEFAULT_TRANSITION_TYPE = "crossfade"   # "none" | "crossfade"
 DEFAULT_TRANSITION_DURATION = 0.5   # seconds
 # Allow the LLM effects director to control transitions per segment
 ALLOW_LLM_TRANSITIONS = True
+
+# ------------------------------------------------------------
+# Content-Aware Branding Effects
+# ------------------------------------------------------------
+# Automatically detect locations/characters and apply branded effects
+USE_CONTENT_AWARE_EFFECTS = True
+
+# spaCy model for Named Entity Recognition
+# Options: "en_core_web_sm" (fast), "en_core_web_md" (accurate), "en_core_web_lg" (best)
+SPACY_MODEL = "en_core_web_sm"
+
+# Minimum confidence for entity detection (0.0-1.0)
+ENTITY_CONFIDENCE_THRESHOLD = 0.5
 
 # ------------------------------------------------------------
 # Logging
