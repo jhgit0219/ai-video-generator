@@ -1,0 +1,41 @@
+{
+  "title": "Ancient Egypt: The Writings of Herodotus",
+  "segments": [
+    {
+      "start_time": 0.0,
+      "end_time": 5.0,
+      "duration": 5.0,
+      "transcript": "Welcome to a journey through ancient history and the wisdom of early historians.",
+      "visual_query": "ancient scrolls and historical documents",
+      "topic": "introduction",
+      "content_type": "narrative_hook"
+    },
+    {
+      "start_time": 5.0,
+      "end_time": 10.0,
+      "duration": 5.0,
+      "transcript": "In Egypt, the great pyramids of Giza stand as monuments to human achievement.",
+      "visual_query": "pyramids of giza",
+      "topic": "egypt pyramids",
+      "content_type": "narrative_event"
+    },
+    {
+      "start_time": 10.0,
+      "end_time": 15.0,
+      "duration": 5.0,
+      "transcript": "Herodotus, the Greek historian, traveled to Egypt and wrote extensively about its wonders.",
+      "visual_query": "ancient greek historian",
+      "topic": "herodotus",
+      "content_type": "narrative_event"
+    },
+    {
+      "start_time": 15.0,
+      "end_time": 20.0,
+      "duration": 5.0,
+      "transcript": "Archaeologists discover new evidence of underground chambers beneath the pyramids.",
+      "visual_query": "archaeological discovery",
+      "topic": "discovery",
+      "content_type": "narrative_reveal"
+    }
+  ]
+}
