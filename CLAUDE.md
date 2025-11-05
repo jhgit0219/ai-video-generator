@@ -21,6 +21,60 @@ Nearly all changes you make will result in needing to re-run the test harness. I
 
 Code is not automatically formatted. Keep it clean manually. Type hints are preferred for all function signatures.
 
+## CRITICAL: MoviePy API Usage (DO NOT FORGET!)
+
+**ALWAYS check existing code for the correct MoviePy API usage before writing new code.**
+
+This project uses a specific version of MoviePy with unique API requirements:
+
+### Import Statement
+```python
+# CORRECT (used throughout this codebase)
+from moviepy import ImageClip, VideoClip, CompositeVideoClip, concatenate_videoclips
+
+# WRONG - DO NOT USE
+from moviepy.editor import ImageClip  # moviepy.editor does NOT exist in this version
+```
+
+### write_videofile Parameters
+```python
+# CORRECT - supported parameters in this MoviePy version
+clip.write_videofile(
+    path,
+    fps=30,
+    codec="h264_nvenc",
+    audio=False,
+    threads=4
+)
+
+# WRONG - these parameters DO NOT exist and will cause TypeError
+clip.write_videofile(
+    path,
+    verbose=False,  # NOT SUPPORTED - will crash
+    logger=None     # NOT SUPPORTED - will crash
+)
+```
+
+**Reference**: See `pipeline/renderer/video_generator.py` for the canonical write_params dict.
+
+### CUDA/GPU Encoding in Multiprocessing
+
+**CRITICAL**: GPU encoders like `h264_nvenc` **CANNOT** be used in multiprocessing workers!
+
+```python
+# WRONG - Will cause CUDA_ERROR_UNKNOWN in parallel workers
+clip.write_videofile(path, codec="h264_nvenc")  # GPU encoder fails with multiple processes
+
+# CORRECT - Use CPU codec for parallel workers
+clip.write_videofile(path, codec="libx264", preset="ultrafast")  # CPU encoder works
+```
+
+**Why**: CUDA contexts cannot be shared across spawned processes. Each worker trying to create a CUDA context will fail with "No capable devices found".
+
+**Solution**:
+- Parallel workers: Use `codec="libx264"` with `preset="ultrafast"` for speed
+- Main process: Can use `h264_nvenc` for final encoding (single process only)
+
 ## Testing
 
 - Quick effects tests: `python test_effects.py --image-dir <dir> --duration <seconds> --output <path>`

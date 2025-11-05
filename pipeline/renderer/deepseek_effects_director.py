@@ -393,7 +393,7 @@ CRITICAL RULES:
    - Extract duration from: clip.duration
    - Extract size from: w, h = clip.size
    - DO NOT add 'duration', 'bbox', 'w', 'h' as separate parameters!
-2. MUST end with "return clip.transform(make_frame)" or "return clip.fl_image(make_frame)"
+2. MUST end with "return clip.transform(make_frame)" - ALWAYS use .transform(), NEVER use .fl_image()
 3. Keep it FOCUSED - one clear cinematic effect per function
 4. Frame is numpy array (H, W, 3) uint8
 5. Use numpy for speed, PIL for resize operations
