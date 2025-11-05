@@ -1,0 +1,28 @@
+{
+  "segments": [
+    {
+      "start_time": 0.0,
+      "end_time": 5.0,
+      "duration": 5.0,
+      "transcript": "Welcome to our journey through ancient history.",
+      "visual_query": "ancient historical scene",
+      "topic": "introduction"
+    },
+    {
+      "start_time": 5.0,
+      "end_time": 10.0,
+      "duration": 5.0,
+      "transcript": "In Egypt, the great pyramids stand as monuments to human achievement.",
+      "visual_query": "pyramids of giza",
+      "topic": "egypt pyramids"
+    },
+    {
+      "start_time": 10.0,
+      "end_time": 15.0,
+      "duration": 5.0,
+      "transcript": "Herodotus, the father of history, wrote extensively about Egyptian wonders.",
+      "visual_query": "ancient historian",
+      "topic": "herodotus"
+    }
+  ]
+}

@@ -33,12 +33,18 @@ from config import (
     ALLOW_LLM_TRANSITIONS,
     ENABLE_AI_UPSCALE,
     ENABLE_SIMPLE_SHARPEN,
+    PARALLEL_RENDER_METHOD,
+    FRAME_RENDER_WORKERS,
+    FRAME_SEQUENCE_QUALITY,
+    CHUNK_DURATION,
+    USE_CONTENT_AWARE_EFFECTS,
 )
 from pipeline.renderer.effects_director import get_effect_plan, reset_character_tracker
 from pipeline.renderer.effects_batch_director import get_effect_plans_batched
 from pipeline.renderer.deepseek_effects_director import get_custom_effect_code, DeepSeekEffectsDirector
 from pipeline.renderer.effects_tools import TOOLS_REGISTRY
 from pipeline.director_agent import choose_effects_system
+from pipeline.renderer.content_aware_effects_director import ContentAwareEffectsDirector
 
 # Try to import iterative effects planner (optional feature)
 try:
@@ -213,7 +219,16 @@ class CinematicEffectsAgent:
                         target_subject = segment.required_subjects[0]
                         logger.info(f"[effects] subject_outline targeting: {target_subject}")
 
-                    enhanced = fn(enhanced, target=target_subject)
+                    # Inject pre-computed subject data if available
+                    kwargs = {"target": target_subject}
+                    if segment and hasattr(segment, 'precomputed_subject_data') and segment.precomputed_subject_data:
+                        precomp = segment.precomputed_subject_data
+                        if precomp.get("mask") is not None:
+                            kwargs["mask"] = precomp["mask"]
+                            kwargs["bbox"] = precomp.get("bbox")
+                            logger.debug(f"[effects] subject_outline using pre-computed mask/bbox (avoids CLIP loading)")
+
+                    enhanced = fn(enhanced, **kwargs)
                     logger.info("[effects] Applied subject_outline (baked, will move with motion)")
             except Exception as e:
                 logger.warning(f"[effects] subject_outline failed: {e}")
@@ -241,6 +256,18 @@ class CinematicEffectsAgent:
                     continue
                 name = str(tool.get("name", "")).strip()
                 params = tool.get("params", {}) or {}
+
+                # Inject pre-computed subject data for effects that need it
+                if name in {"zoom_on_subject", "subject_pop", "character_highlight"} and segment and hasattr(segment, 'precomputed_subject_data') and segment.precomputed_subject_data:
+                    precomp = segment.precomputed_subject_data
+                    # Only inject if not already provided in params
+                    if "bbox" not in params and precomp.get("bbox") is not None:
+                        params = dict(params)  # Make a copy to avoid mutating original
+                        params["bbox"] = precomp["bbox"]
+                        if precomp.get("mask") is not None:
+                            params["mask"] = precomp["mask"]
+                        logger.debug(f"[effects] {name} using pre-computed bbox/mask (avoids CLIP loading)")
+
                 fn = TOOLS_REGISTRY.get(name)
                 if fn:
                     enhanced = fn(enhanced, **params)
@@ -706,6 +733,104 @@ def render_final_video(segments: List[VideoSegment], audio_file: str, output_nam
         )
         logger.info(f"[video_generator] Micro-batching complete: {len([p for p in precomputed_plans if p])} valid plans generated")
 
+        # CRITICAL: Attach precomputed plans to segments for parallel_v2 rendering
+        # Without this, parallel workers won't have access to effects plans!
+        for i, (seg, plan) in enumerate(zip(segments, precomputed_plans)):
+            seg.effects_plan = plan
+            if plan:
+                logger.debug(f"[video_generator] Attached precomputed plan to segment {i}: {plan}")
+
+        # Content-Aware Branding Effects: Analyze segments for locations/persons
+        if USE_CONTENT_AWARE_EFFECTS:
+            logger.info("[video_generator] Analyzing segments for content-aware branding effects")
+            content_director = ContentAwareEffectsDirector()
+            content_director.analyze_segments(segments)
+
+            # Modify visual queries for first location mentions (target 3D globe imagery)
+            for i, seg in enumerate(segments):
+                if seg.is_first_location_mention:
+                    original_query = seg.visual_query
+                    seg.visual_query = content_director.modify_visual_query_for_location(seg)
+                    logger.info(f"[video_generator] Segment {i}: Modified query for location "
+                               f"'{seg.first_mentioned_location}': '{original_query}' -> '{seg.visual_query}'")
+
+            # Inject branding effects into precomputed plans
+            for i, (seg, plan) in enumerate(zip(segments, precomputed_plans)):
+                if plan and (seg.is_first_location_mention or seg.is_first_person_mention):
+                    content_director.inject_branding_effects(seg, plan)
+                    logger.info(f"[video_generator] Segment {i}: Injected branding effects into plan")
+
+        # Pre-compute subject detection for segments that need it (to avoid CLIP loading 16x in workers)
+        logger.info(f"[video_generator] Scanning effects plans for subject detection requirements")
+        subject_detection_tools = {"zoom_on_subject", "subject_outline", "subject_pop", "character_highlight"}
+        segments_needing_detection = []
+
+        for i, (seg, plan) in enumerate(zip(segments, precomputed_plans)):
+            if not plan or not seg.selected_image or not os.path.exists(seg.selected_image):
+                continue
+
+            # Check if any tool in the plan requires subject detection
+            tools_in_plan = plan.get("tools", [])
+            needs_detection = any(
+                tool.get("name") in subject_detection_tools
+                for tool in tools_in_plan
+            )
+
+            if needs_detection:
+                segments_needing_detection.append((i, seg, plan))
+
+        if segments_needing_detection:
+            logger.info(f"[video_generator] Pre-computing subject detection for {len(segments_needing_detection)} segments (avoids CLIP loading in every worker)")
+
+            # Import subject detection here (only in main process)
+            from .subject_detection import detect_subject_bbox, detect_subject_shape
+            from PIL import Image as PILImage
+            import numpy as np
+
+            for i, seg, plan in segments_needing_detection:
+                try:
+                    # Load first frame of image
+                    img = PILImage.open(seg.selected_image).convert('RGB')
+                    frame = np.array(img)
+
+                    # Determine what detection data is needed based on tools
+                    tools_in_plan = plan.get("tools", [])
+                    needs_bbox = False
+                    needs_shape = False
+                    target = None
+
+                    for tool in tools_in_plan:
+                        tool_name = tool.get("name")
+                        if tool_name == "zoom_on_subject":
+                            needs_bbox = True
+                            target = tool.get("params", {}).get("target")
+                        elif tool_name == "subject_outline":
+                            needs_shape = True
+                            target = tool.get("params", {}).get("target")
+                        elif tool_name == "subject_pop":
+                            needs_shape = True  # subject_pop uses shape
+                            target = tool.get("params", {}).get("target")
+
+                    # Run detection and store results
+                    if needs_shape:
+                        # detect_subject_shape returns both bbox and mask
+                        result = detect_subject_shape(frame, target=target)
+                        seg.precomputed_subject_data = result
+                        logger.debug(f"[video_generator] Segment {i}: Pre-computed subject shape for target='{target}'")
+                    elif needs_bbox:
+                        # Just bbox needed
+                        bbox = detect_subject_bbox(frame, target=target)
+                        seg.precomputed_subject_data = {"bbox": bbox, "mask": None}
+                        logger.debug(f"[video_generator] Segment {i}: Pre-computed subject bbox for target='{target}'")
+
+                except Exception as e:
+                    logger.warning(f"[video_generator] Segment {i}: Failed to pre-compute subject detection: {e}")
+                    seg.precomputed_subject_data = None
+
+            logger.info(f"[video_generator] Subject detection pre-computation complete")
+        else:
+            logger.info(f"[video_generator] No segments require subject detection, skipping pre-computation")
+
     # Batch enhance all images upfront (2-4x faster than one-by-one)
     enhanced_images_cache = {}
     if ENABLE_AI_UPSCALE or ENABLE_SIMPLE_SHARPEN:
@@ -734,8 +859,9 @@ def render_final_video(segments: List[VideoSegment], audio_file: str, output_nam
             
             if missing_image:
                 logger.warning(f"   No valid image for segment {i}, using black placeholder.")
-                # ColorClip size: (width, height)
-                clip = ColorClip(size=(RENDER_SIZE[0], RENDER_SIZE[1]), color=(0, 0, 0), duration=seg_dur)
+                # Create a proper black image array for ImageClip
+                black_frame = np.zeros((RENDER_SIZE[1], RENDER_SIZE[0], 3), dtype=np.uint8)
+                clip = ImageClip(black_frame, duration=seg_dur)
             else:
                 # Use batch-enhanced image from cache (already processed upfront)
                 if ENABLE_AI_UPSCALE or ENABLE_SIMPLE_SHARPEN:
@@ -1011,12 +1137,17 @@ def render_final_video(segments: List[VideoSegment], audio_file: str, output_nam
     else:
         logger.info(f"[video_generator] Video already at correct size {IMAGE_SIZE}")
 
-    # Determine output filename
+    # Determine output filename with timestamp
+    import time as time_module
+    timestamp = time_module.strftime("%Y%m%d_%H%M%S")
+
     if output_name:
-        filename = f"{output_name}.mp4"
+        # Remove .mp4 extension if present
+        base_name = output_name.replace('.mp4', '')
+        filename = f"{base_name}_{timestamp}.mp4"
     else:
-        filename = "final_video.mp4"
-    
+        filename = f"final_video_{timestamp}.mp4"
+
     output_path = output_dir / filename
     logger.info(f"[video_generator] Exporting to: {output_path}")
     logger.info(f"[video_generator] Using codec: {VIDEO_CODEC} (preset: {PRESET})")
@@ -1044,8 +1175,88 @@ def render_final_video(segments: List[VideoSegment], audio_file: str, output_nam
     elif VIDEO_CODEC == "libx264":
         # Software encoder - use preset parameter directly
         write_params["preset"] = PRESET if PRESET in ["ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow"] else "medium"
-    
-    final_video.write_videofile(str(output_path), **write_params)
+
+    # Use parallel rendering if enabled, otherwise fallback to MoviePy
+    if PARALLEL_RENDER_METHOD != "disabled":
+        try:
+            if PARALLEL_RENDER_METHOD == "parallel_v2":
+                # Use new data-based parallel rendering (no pickling issues)
+                from pipeline.renderer.parallel_frame_renderer import render_video_parallel_v2
+
+                logger.info(f"[video_generator] Using TRUE parallel rendering (data-based)")
+
+                # Convert segments to serializable dicts
+                segment_dicts = []
+                for seg in segments:
+                    seg_dict = {
+                        'start_time': seg.start_time,
+                        'end_time': seg.end_time,
+                        'selected_image': seg.selected_image,
+                        'effects_plan': getattr(seg, 'effects_plan', None),
+                    }
+
+                    # Serialize pre-computed subject data if available (convert numpy arrays to lists)
+                    if hasattr(seg, 'precomputed_subject_data') and seg.precomputed_subject_data:
+                        precomp = seg.precomputed_subject_data
+                        serialized_precomp = {}
+
+                        if precomp.get('bbox') is not None:
+                            serialized_precomp['bbox'] = precomp['bbox']  # tuple of floats - already serializable
+
+                        if precomp.get('mask') is not None:
+                            # Convert numpy array to list for pickle serialization
+                            mask = precomp['mask']
+                            if hasattr(mask, 'tolist'):
+                                serialized_precomp['mask'] = mask.tolist()
+                                serialized_precomp['mask_shape'] = mask.shape  # Store shape for reconstruction
+                            else:
+                                serialized_precomp['mask'] = mask  # Already a list
+
+                        seg_dict['precomputed_subject_data'] = serialized_precomp
+                        logger.debug(f"[video_generator] Serialized precomputed_subject_data for segment (bbox={'bbox' in serialized_precomp}, mask={'mask' in serialized_precomp})")
+
+                    segment_dicts.append(seg_dict)
+
+                # CRITICAL: Always use CPU codec (libx264) for parallel workers
+                # GPU codecs (h264_nvenc) fail in multiprocessing due to CUDA context conflicts
+                # Using consistent codec enables FAST concat with -c:v copy (no re-encoding)
+                worker_codec = "libx264"
+                worker_preset = "ultrafast"  # Fast encoding for workers (concat is instant anyway)
+
+                render_video_parallel_v2(
+                    segments=segment_dicts,
+                    output_path=str(output_path),
+                    audio_file=audio_file,
+                    fps=FPS,
+                    codec=worker_codec,  # Use CPU codec for workers (enables fast concat)
+                    preset=worker_preset,  # Fast preset (concat is instant anyway)
+                    workers=FRAME_RENDER_WORKERS,
+                    chunk_duration=CHUNK_DURATION
+                )
+            else:
+                # Use old frame-by-frame parallel rendering
+                from pipeline.renderer.parallel_frame_renderer import render_video_parallel
+
+                logger.info(f"[video_generator] Using parallel rendering: {PARALLEL_RENDER_METHOD}")
+                render_video_parallel(
+                    clip=final_video,
+                    output_path=str(output_path),
+                    audio_file=audio_file,
+                    method=PARALLEL_RENDER_METHOD,
+                    fps=FPS,
+                    codec=VIDEO_CODEC,
+                    preset=PRESET,
+                    workers=FRAME_RENDER_WORKERS,
+                    quality=FRAME_SEQUENCE_QUALITY,
+                    chunk_duration=CHUNK_DURATION
+                )
+        except Exception as e:
+            logger.error(f"[video_generator] Parallel rendering failed: {e}, falling back to MoviePy")
+            import traceback
+            traceback.print_exc()
+            final_video.write_videofile(str(output_path), **write_params)
+    else:
+        final_video.write_videofile(str(output_path), **write_params)
 
     logger.info("[video_generator] Video rendering complete!")
     return str(output_path)
