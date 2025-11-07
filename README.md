@@ -33,6 +33,7 @@ An AI-powered video generation pipeline that transforms text scripts into cinema
 3. **Download required models:**
 
    - **YOLO11x-seg**: [Download](https://github.com/ultralytics/assets/releases/download/v8.3.0/yolo11x-seg.pt) → Save to `weights/yolo11x-seg.pt`
+   - **Real-ESRGAN** (optional): [Download](https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth) → Save to `weights/RealESRGAN_x4plus.pth`
    - **Ollama LLMs**: Install [Ollama](https://ollama.com/download), then run:
      ```bash
      ollama pull llama3
