@@ -320,6 +320,8 @@ def full_pipeline(
     :param audio_path: Optional audio file for background music/narration.
     :return: Path to generated video file.
     """
+    import shutil
+
     def update_progress(stage: str, percent: float):
         """Update progress if callback provided."""
         if progress_callback:
@@ -327,12 +329,25 @@ def full_pipeline(
 
     update_progress("Initializing", 0.05)
 
-    # Run async pipeline
+    # Run async pipeline (generates to default output location)
     result = asyncio.run(async_generate_video(script_path, audio_path))
 
-    update_progress("Complete", 1.0)
+    update_progress("Complete", 0.95)
 
-    return output_path if result else None
+    if result:
+        # Move the generated video to the requested output path
+        result_path = Path(result)
+        target_path = Path(output_path)
+
+        if result_path.exists():
+            # Ensure target directory exists
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            # Move the file
+            shutil.move(str(result_path), str(target_path))
+            update_progress("Complete", 1.0)
+            return str(target_path)
+
+    return None
 
 
 if __name__ == "__main__":
