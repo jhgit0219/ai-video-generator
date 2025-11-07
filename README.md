@@ -4,56 +4,9 @@ An AI-powered video generation pipeline that transforms text scripts into cinema
 
 ---
 
-## 🚀 Quick Start for Users
+## 🚀 Quick Start
 
-### One-Click Setup (Windows)
-
-1. **Clone the repository:**
-
-   ```bash
-   git clone <repository-url>
-   cd ai-video-generator
-   ```
-
-2. **Run the installer:**
-
-   ```bash
-   INSTALL.bat
-   ```
-
-   This will:
-
-   - Create a Python virtual environment
-   - Install all dependencies
-   - Download Ollama and AI models (llama3, deepseek-coder)
-   - Create a desktop shortcut
-
-3. **Launch the web interface:**
-
-   ```bash
-   RUN.bat
-   ```
-
-   Or double-click the desktop shortcut created during installation.
-
-4. **Open your browser** at: http://localhost:7860
-   - Paste your script text or upload a JSON file
-   - (Optional) Upload an audio file
-   - Click "Generate Video"
-   - Download your completed video!
-
-**Note:** On first run, AI models will auto-download (~550MB total):
-
-- YOLO11x segmentation model (~200MB)
-- CLIP semantic ranking model (~350MB)
-- Ollama LLMs are downloaded during installation
-
-**If auto-download fails**, manually download and place models:
-
-- YOLO11x-seg: [Download from Ultralytics](https://github.com/ultralytics/assets/releases/download/v8.3.0/yolo11x-seg.pt) → Save to `weights/yolo11x-seg.pt`
-- Ollama models: Run `ollama pull llama3` and `ollama pull deepseek-coder:6.7b` manually
-
-### Setup (Mac/Linux)
+### Setup (All Platforms)
 
 1. **Clone the repository:**
 
@@ -62,50 +15,52 @@ An AI-powered video generation pipeline that transforms text scripts into cinema
    cd ai-video-generator
    ```
 
-2. **Create virtual environment and install dependencies:**
+2. **Install dependencies:**
 
    ```bash
+   # Windows
+   python -m venv venv
+   .\venv\Scripts\activate
+   pip install -r requirements.txt
+
+   # Mac/Linux
    python3.11 -m venv venv
    source venv/bin/activate
    pip install -r requirements.txt
    python -m spacy download en_core_web_sm
    ```
 
-3. **Install Ollama (for LLM effects):**
+3. **Download required models:**
 
-   ```bash
-   # Download from: https://ollama.com/download
-   ollama pull llama3
-   ollama pull deepseek-coder:6.7b
-   ```
+   - **YOLO11x-seg**: [Download](https://github.com/ultralytics/assets/releases/download/v8.3.0/yolo11x-seg.pt) → Save to `weights/yolo11x-seg.pt`
+   - **Ollama LLMs**: Install [Ollama](https://ollama.com/download), then run:
+     ```bash
+     ollama pull llama3
+     ollama pull deepseek-coder:6.7b
+     ```
 
 4. **Create .env file:**
 
    ```bash
+   # Copy template and edit
    cp .env.example .env
-   # Edit .env and set USE_PROXIES=False
+   # Set USE_PROXIES=False in .env
    ```
 
 5. **Launch the web interface:**
 
    ```bash
-   source venv/bin/activate
+   # Windows
+   .\venv\Scripts\python.exe gradio_interface.py
+
+   # Mac/Linux
    python gradio_interface.py
    ```
 
 6. **Open your browser** at: http://localhost:7860
-
-**Note:** On first run, the following models will auto-download:
-
-- YOLO11x segmentation model (~200MB) - saved to `weights/yolo11x-seg.pt`
-- CLIP model (~350MB) - cached by HuggingFace Transformers
-- (Optional) Real-ESRGAN upscaling model - manual download required if `ENABLE_AI_UPSCALE=True`
-
-**If auto-download fails**, manually download and place models:
-
-- YOLO11x-seg: [Download from Ultralytics](https://github.com/ultralytics/assets/releases/download/v8.3.0/yolo11x-seg.pt) → Save to `weights/yolo11x-seg.pt`
-- Ollama models: Run `ollama pull llama3` and `ollama pull deepseek-coder:6.7b` manually
-- Real-ESRGAN (optional): [Download RealESRGAN_x4plus.pth](https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth) → Save to `weights/RealESRGAN_x4plus.pth`
+   - Upload your script (text or JSON) and optional audio file
+   - Click "Generate Video"
+   - Download your completed video!
 
 ### Manual Setup (Advanced)
 
