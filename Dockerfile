@@ -77,11 +77,9 @@ COPY . .
 # Create necessary directories
 RUN mkdir -p data/input data/output data/temp_images logs weights
 
-# Download YOLO weights if not present
-RUN if [ ! -f weights/yolo11x-seg.pt ]; then \
-    wget https://github.com/ultralytics/assets/releases/download/v0.0.0/yolo11x-seg.pt \
-    -O weights/yolo11x-seg.pt; \
-    fi
+# Note: YOLO weights will be auto-downloaded by ultralytics on first run
+# You can pre-load them by mounting your local weights directory:
+# -v ./weights:/app/weights
 
 # Expose port for web interface
 EXPOSE 7860
