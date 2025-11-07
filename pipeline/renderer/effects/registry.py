@@ -29,6 +29,7 @@ from .branding import (
     apply_map_highlight,
     apply_character_highlight,
     apply_news_overlay,
+    apply_newspaper_frame,
     apply_branded_transition,
 )
 
@@ -71,5 +72,6 @@ TOOLS_REGISTRY: Dict[str, Callable[..., VideoClip]] = {
     "map_highlight": apply_map_highlight,
     "character_highlight": apply_character_highlight,
     "news_overlay": apply_news_overlay,
+    "newspaper_frame": apply_newspaper_frame,
     "branded_transition": apply_branded_transition,
 }

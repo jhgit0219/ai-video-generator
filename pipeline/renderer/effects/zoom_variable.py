@@ -26,22 +26,67 @@ def apply_variable_zoom_on_subject(
     anchor_feature: str = "auto",
     anchor_point: Optional[Tuple[int, int]] = None,
     anim_duration: Optional[float] = None,
+    visual_description: Optional[str] = None,
 ) -> _VideoClip:
+    """Apply variable zoom focused on detected subject.
+
+    :param visual_description: Optional visual query/description to extract target object.
+                               If provided and no explicit target, will attempt to detect
+                               mentioned objects (e.g., "car", "phone") instead of defaulting to "person".
+    """
     w, h = clip.size
     logger.debug(f"[effects] zoom_on_subject called: clip_size=({w}, {h}), bbox={bbox is not None}, mask={mask is not None}")
+
+    # If no explicit target but we have visual description, try to extract target object
+    if target is None and visual_description:
+        sd = import_subject_detection()
+        extract_target = sd.get("extract_target_from_description")
+        if callable(extract_target):
+            inferred_target = extract_target(visual_description)  # type: ignore
+            if inferred_target:
+                target = inferred_target
+                logger.info(f"[effects] zoom_on_subject: Inferred target '{target}' from description: '{visual_description[:100]}'...")
 
     if bbox is None:
         try:
             frame = clip.get_frame(min(0.001, (clip.duration or 0.001) * 0.5))
             sd = import_subject_detection()
-            db = sd.get("detect_subject_bbox")
-            if callable(db):
-                bbox = db(frame, target=target, prefer=prefer, nth=nth)  # type: ignore
+            # Use detect_subject_shape to get confidence
+            ds = sd.get("detect_subject_shape")
+            if callable(ds):
+                result = ds(frame, target=target, prefer=prefer, nth=nth, min_confidence=0.25)  # type: ignore
+                bbox = result.get("bbox")
+                confidence = result.get("confidence")
+
+                # If no clear subject detected (low confidence or None bbox), skip zoom
+                if bbox is None or confidence is None:
+                    logger.debug("[effects] zoom_on_subject: No clear subject detected, skipping zoom")
+                    return clip  # Return clip unchanged
+                if confidence < 0.25:
+                    logger.debug(f"[effects] zoom_on_subject: Low subject confidence ({confidence:.2f}), skipping zoom")
+                    return clip
+
+                logger.debug(f"[effects] zoom_on_subject: Subject detected with confidence {confidence:.2f}")
             else:
-                raise ImportError("detect_subject_bbox not available")
-        except Exception:
+                # Fallback to old method
+                db = sd.get("detect_subject_bbox")
+                if callable(db):
+                    bbox = db(frame, target=target, prefer=prefer, nth=nth)  # type: ignore
+                else:
+                    raise ImportError("detect_subject_bbox not available")
+        except Exception as e:
+            logger.debug(f"[effects] zoom_on_subject: Detection failed ({e}), using fallback")
             bbox = (0.3, 0.3, 0.4, 0.4)
     x, y, bw, bh = denorm_bbox(bbox, (w, h))
+
+    # Detect bust shot and reduce zoom to prevent face cropping
+    # Bust shots have low aspect ratio (width is significant portion of frame)
+    bbox_aspect = bh / bw if bw > 0 else 1.0
+    is_bust_shot = bbox_aspect <= 0.7
+    if is_bust_shot:
+        # Reduce zoom for bust shots to prevent face cropping
+        target_scale = min(target_scale, 1.15)
+        logger.debug(f"[effects] zoom_on_subject detected bust shot (aspect {bbox_aspect:.2f}), limiting zoom to {target_scale:.2f}x")
 
     cx, cy = None, None
 

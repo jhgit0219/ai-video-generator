@@ -320,7 +320,7 @@ async def llm_refine_query(segment, top3, contextual_labels=None):
     # IMPORTANT: Use condensed prompt for retries to prevent token overload
     # Retry queries use ultra-concise guidelines (~50 tokens vs ~1400 tokens)
     # This prevents Ollama context overwhelm that can cause bad refinements
-    from prompts import get_director_refine_query_prompt_retry
+    from pipeline.prompts import get_director_refine_query_prompt_retry
 
     user_prompt = get_director_refine_query_prompt_retry(
         visual_query=current_query,

@@ -22,6 +22,72 @@ from utils.logger import setup_logger
 
 logger = setup_logger(__name__)
 
+# YOLO COCO class names that can be detected
+# See: https://github.com/ultralytics/ultralytics/blob/main/ultralytics/cfg/datasets/coco.yaml
+YOLO_DETECTABLE_OBJECTS = {
+    # Vehicles
+    "car", "truck", "bus", "motorcycle", "bicycle", "boat", "airplane", "train",
+    # Animals
+    "bird", "cat", "dog", "horse", "sheep", "cow", "elephant", "bear", "zebra", "giraffe",
+    # Objects
+    "bottle", "cup", "fork", "knife", "spoon", "bowl", "banana", "apple", "sandwich",
+    "orange", "broccoli", "carrot", "pizza", "donut", "cake", "chair", "couch", "bed",
+    "table", "toilet", "tv", "laptop", "mouse", "keyboard", "phone", "microwave", "oven",
+    "refrigerator", "book", "clock", "vase", "scissors", "toothbrush",
+    # Sports
+    "frisbee", "skis", "snowboard", "ball", "kite", "bat", "glove", "skateboard",
+    "surfboard", "racket",
+    # Outdoor
+    "bench", "backpack", "umbrella", "handbag", "tie", "suitcase",
+    # Traffic
+    "stop sign", "parking meter", "fire hydrant",
+    # Person (always available)
+    "person",
+}
+
+# Common words that should map to YOLO classes
+OBJECT_SYNONYMS = {
+    "device": ["phone", "laptop", "tv"],
+    "technology": ["phone", "laptop", "tv", "computer"],
+    "vehicle": ["car", "truck", "bus"],
+    "animal": ["dog", "cat", "bird", "horse"],
+    "food": ["pizza", "sandwich", "apple", "banana"],
+    "furniture": ["chair", "couch", "table", "bed"],
+}
+
+
+def extract_target_from_description(description: str) -> Optional[str]:
+    """Extract YOLO-detectable target object from visual description.
+
+    Analyzes the description text and returns the most relevant YOLO class
+    that can be detected. Prioritizes concrete nouns over "person".
+
+    :param description: Visual query, visual description, or transcript text
+    :return: YOLO class name if found, None if should default to person detection
+    """
+    if not description:
+        return None
+
+    desc_lower = description.lower()
+
+    # First, check for exact matches with YOLO classes
+    for obj_class in YOLO_DETECTABLE_OBJECTS:
+        if obj_class in desc_lower and obj_class != "person":
+            logger.debug(f"[subject_detection] Found target object '{obj_class}' in description")
+            return obj_class
+
+    # Check for synonyms/related words
+    for keyword, candidates in OBJECT_SYNONYMS.items():
+        if keyword in desc_lower:
+            # Return first candidate that appears in description
+            for candidate in candidates:
+                if candidate in YOLO_DETECTABLE_OBJECTS:
+                    logger.debug(f"[subject_detection] Mapped '{keyword}' to target '{candidate}'")
+                    return candidate
+
+    # No concrete object found - return None to use default (person)
+    return None
+
 # ---------- Helpers ----------
 
 
@@ -540,6 +606,40 @@ def _yolo_bbox(
         return None
 
 
+def _yolo_mask_and_bbox_with_confidence(
+    image_rgb: np.ndarray,
+    target: Optional[str] = None,
+    prefer: Optional[str] = None,
+    nth: Optional[int] = None,
+) -> Tuple[Optional[np.ndarray], Optional[Tuple[int, int, int, int]], Optional[float]]:
+    """Return (mask, bbox, confidence) for best object if YOLO-seg available.
+
+    Returns:
+        mask: uint8 HxW array (0 or 255) if available, else None
+        bbox: (x1, y1, x2, y2) in pixels if detected, else None
+        confidence: YOLO detection confidence (0-1) if detected, else None
+    """
+    mask, bbox = _yolo_mask_and_bbox(image_rgb, target, prefer, nth)
+
+    # Extract confidence from YOLO results
+    conf = None
+    if bbox is not None:
+        model = _get_yolo_model()
+        if model:
+            try:
+                results = model.predict(image_rgb, verbose=False, conf=0.25, classes=[0])
+                if results and len(results) > 0:
+                    boxes = getattr(results[0], "boxes", None)
+                    if boxes is not None and len(boxes) > 0:
+                        conf_values = boxes.conf.cpu().numpy()
+                        if len(conf_values) > 0:
+                            conf = float(conf_values.max())  # Use highest confidence
+            except Exception:
+                pass
+
+    return mask, bbox, conf
+
+
 def _yolo_mask_and_bbox(
     image_rgb: np.ndarray,
     target: Optional[str] = None,
@@ -1040,9 +1140,9 @@ def detect_adaptive_face_anchor(
     This function directly uses YOLO to detect person bounding box, then calculates
     face position based on the bbox aspect ratio (height/width):
 
-    - Full body (aspect > 1.4): Face at 12% from top
-    - Half body (0.7 < aspect <= 1.4): Face at 25% from top
-    - Bust (aspect <= 0.7): Face at 50% from top
+    - Full body (aspect > 1.4): Face at 6% from top (center of upper 12%)
+    - Half body (0.7 < aspect <= 1.4): Face at 12.5% from top (center of upper 25%)
+    - Bust (aspect <= 0.7): Face at 12.5% from top (already close-up, less headroom needed)
 
     Args:
         image_rgb: RGB image as numpy array.
@@ -1084,20 +1184,20 @@ def detect_adaptive_face_anchor(
 
                     # Adaptive face positioning based on aspect ratio
                     # Based on measured dimensions:
-                    # Full body: 737 x 1366 (aspect 1.85)
-                    # Half body: 737 x 683 (aspect 0.93)
-                    # Bust: 737 x 341 (aspect 0.46)
+                    # Full body: 737 x 1366 (aspect 1.85) - eyes at ~6% (center of upper 12%)
+                    # Half body: 737 x 683 (aspect 0.93) - eyes at ~12.5% (center of upper 25%)
+                    # Bust: 737 x 341 (aspect 0.46) - eyes at ~12.5% (already close-up, less headroom)
                     if aspect_ratio > 1.4:
-                        # Full body shot
-                        face_pct = 0.12
+                        # Full body shot - target center of head (middle of upper 12%)
+                        face_pct = 0.06
                         shot_type = "full body"
                     elif aspect_ratio > 0.7:
-                        # Half body shot (waist up)
-                        face_pct = 0.25
+                        # Half body shot (waist up) - target center of head (middle of upper 25%)
+                        face_pct = 0.125
                         shot_type = "half body"
                     else:
-                        # Bust shot (shoulders up)
-                        face_pct = 0.50
+                        # Bust shot (shoulders up) - already close, use same as half body
+                        face_pct = 0.125
                         shot_type = "bust"
 
                     face_x = (px1 + px2) / 2
@@ -1168,40 +1268,53 @@ def detect_subject_shape(
     target: Optional[str] = None,
     prefer: Optional[str] = None,
     nth: Optional[int] = None,
+    min_confidence: float = 0.25,
 ) -> Dict[str, Any]:
     """Return a dict with keys:
     - mask: np.ndarray[H,W] uint8 (0 or 255) if available else None
     - bbox: normalized (x,y,w,h)
+    - confidence: detection confidence (0-1), None if no subject detected
+
+    :param min_confidence: Minimum YOLO confidence to consider a subject detected.
+                          If below threshold, returns None to indicate no clear subject.
     """
     if image_rgb is None or image_rgb.size == 0:
-        return {"mask": None, "bbox": (0.3, 0.3, 0.4, 0.4)}
+        return {"mask": None, "bbox": (0.3, 0.3, 0.4, 0.4), "confidence": None}
     img = image_rgb.astype(np.uint8) if image_rgb.dtype != np.uint8 else image_rgb
     h, w = img.shape[:2]
     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
 
-    # Prefer YOLO seg mask
-    m, bb = _yolo_mask_and_bbox(img, target=target, prefer=prefer, nth=nth)
+    # Prefer YOLO seg mask with confidence check
+    m, bb, conf = _yolo_mask_and_bbox_with_confidence(img, target=target, prefer=prefer, nth=nth)
     if bb is not None:
         nb = _norm_bbox(bb[0], bb[1], bb[2], bb[3], w, h)
     else:
         nb = None
+
     if m is not None:
-        return {"mask": m, "bbox": nb if nb is not None else (0.3, 0.3, 0.4, 0.4)}
+        # Check if confidence meets threshold
+        if conf is not None and conf < min_confidence:
+            logger.debug(f"[subject_detection] Subject confidence {conf:.2f} below threshold {min_confidence}, treating as no subject")
+            return {"mask": None, "bbox": None, "confidence": conf}
+        return {"mask": m, "bbox": nb if nb is not None else (0.3, 0.3, 0.4, 0.4), "confidence": conf}
 
     # YOLO boxes only
     if nb is not None:
-        return {"mask": None, "bbox": nb}
+        if conf is not None and conf < min_confidence:
+            logger.debug(f"[subject_detection] Subject confidence {conf:.2f} below threshold {min_confidence}, treating as no subject")
+            return {"mask": None, "bbox": None, "confidence": conf}
+        return {"mask": None, "bbox": nb, "confidence": conf}
 
     # Face
     fb = _face_bbox(gray)
     if fb is not None:
-        return {"mask": None, "bbox": _norm_bbox(fb[0], fb[1], fb[2], fb[3], w, h)}
+        return {"mask": None, "bbox": _norm_bbox(fb[0], fb[1], fb[2], fb[3], w, h), "confidence": 0.8}
 
     # Edge saliency
     eb = _edge_saliency_bbox(gray)
     if eb is not None:
-        return {"mask": None, "bbox": _norm_bbox(eb[0], eb[1], eb[2], eb[3], w, h)}
+        return {"mask": None, "bbox": _norm_bbox(eb[0], eb[1], eb[2], eb[3], w, h), "confidence": 0.3}
 
-    # Fallback
+    # Fallback - no clear subject
     cx1 = int(w * 0.3); cy1 = int(h * 0.3); cx2 = int(w * 0.7); cy2 = int(h * 0.7)
-    return {"mask": None, "bbox": _norm_bbox(cx1, cy1, cx2, cy2, w, h)}
+    return {"mask": None, "bbox": None, "confidence": None}

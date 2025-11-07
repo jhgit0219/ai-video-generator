@@ -141,24 +141,52 @@ class ContentAwareEffectsDirector:
             effect_plan["tools"].append(map_tool)
             logger.info(f"[content_aware_effects] Injected map_highlight for {location_upper}")
 
-        # Add character_highlight for first person mention
+        # Add character_highlight or newspaper_frame for first person mention
         if segment.is_first_person_mention and segment.first_mentioned_person:
-            person_upper = segment.first_mentioned_person.upper()
+            person_name = segment.first_mentioned_person
+            person_upper = person_name.upper()
 
-            char_tool = {
-                "name": "character_highlight",
-                "params": {
-                    "character_name": person_upper,
-                    "glow_color": [0, 255, 200],
-                    "glow_stages": [1.0, 0.6, 0.3],
-                    "stage_durations": [0.5, 1.2, 1.8],
-                    "label_position": "top",
-                    "cps": 10
+            # Check if this person warrants newspaper frame via LLM
+            is_newspaper_worthy = self.character_inference.is_newspaper_worthy(
+                person_name,
+                segment.transcript
+            )
+
+            if is_newspaper_worthy:
+                # Use newspaper_frame for significant/newsworthy persons
+                # Extract enhanced description for headline/body text
+                enhanced_desc = segment.detected_persons_enhanced[0] if segment.detected_persons_enhanced else person_name
+
+                newspaper_tool = {
+                    "name": "newspaper_frame",
+                    "params": {
+                        "headline": person_upper,
+                        "subheadline": enhanced_desc,
+                        "body_text": segment.transcript[:200] + "..." if len(segment.transcript) > 200 else segment.transcript,
+                        "cutout_width_ratio": 0.6,
+                        "cutout_height_ratio": 0.6,
+                        "zoom_to_fullscreen": True,
+                        "zoom_start_time": 2.0,
+                        "zoom_duration": 1.5
+                    }
                 }
-            }
-
-            effect_plan["tools"].append(char_tool)
-            logger.info(f"[content_aware_effects] Injected character_highlight for {person_upper}")
+                effect_plan["tools"].append(newspaper_tool)
+                logger.info(f"[content_aware_effects] Injected newspaper_frame for newsworthy person {person_upper}")
+            else:
+                # Use character_highlight for modern/generic persons
+                char_tool = {
+                    "name": "character_highlight",
+                    "params": {
+                        "character_name": person_upper,
+                        "glow_color": [0, 255, 200],
+                        "glow_stages": [1.0, 0.6, 0.3],
+                        "stage_durations": [0.5, 1.2, 1.8],
+                        "label_position": "top",
+                        "cps": 10
+                    }
+                }
+                effect_plan["tools"].append(char_tool)
+                logger.info(f"[content_aware_effects] Injected character_highlight for {person_upper}")
 
         # Add news_overlay for news-worthy segments
         self.detect_and_inject_news_overlay(segment, effect_plan)

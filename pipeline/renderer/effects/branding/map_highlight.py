@@ -70,14 +70,16 @@ def apply_map_highlight(
         text_pos = (bx + bw / 2, min(0.95, by + bh + 0.05))
 
     # LAYER 1: Apply slime splatter
-    clip = apply_slime_splatter(
-        clip,
-        position=box_position,
-        color=SLIME_GREEN,
-        opacity=0.7,  # 180/255 alpha
-        seed=hash(location_name) % 1000,
-        animate_in=0.4,
-    )
+    # NOTE: Slime effect temporarily disabled due to shape quality issues
+    # TODO: Re-enable after improving slime shape generation algorithm
+    # clip = apply_slime_splatter(
+    #     clip,
+    #     position=box_position,
+    #     color=SLIME_GREEN,
+    #     opacity=0.7,  # 180/255 alpha
+    #     seed=hash(location_name) % 1000,
+    #     animate_in=0.4,
+    # )
 
     # LAYER 2: Apply full-frame green tint
     clip = apply_full_frame_tint(

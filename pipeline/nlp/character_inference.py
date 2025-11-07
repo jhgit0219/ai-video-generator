@@ -6,7 +6,9 @@ and surrounding text to improve search accuracy for historical figures.
 
 from typing import List, Optional
 import re
+import asyncio
 from utils.logger import setup_logger
+from utils.llm import ollama_chat
 
 logger = setup_logger(__name__)
 
@@ -22,6 +24,9 @@ FEMALE_NAMES = {
     "cleopatra", "nefertiti", "hatshepsut", "joan", "marie", "catherine",
     "elizabeth", "victoria", "ada", "florence", "amelia"
 }
+
+# Historical figures that should use newspaper_frame instead of character_highlight
+HISTORICAL_FIGURES = MALE_NAMES | FEMALE_NAMES
 
 # Title/occupation patterns
 TITLE_PATTERNS = [
@@ -52,6 +57,59 @@ class CharacterInferenceEngine:
     def __init__(self):
         """Initialize character inference engine."""
         logger.debug("[character_inference] Initialized")
+
+    def is_newspaper_worthy(self, name: str, context: str) -> bool:
+        """Check if person warrants newspaper frame effect via LLM.
+
+        Determines if the person is historically significant, newsworthy,
+        or important enough to warrant dramatic newspaper introduction.
+
+        :param name: Character name.
+        :param context: Surrounding text (transcript).
+        :return: True if newspaper-worthy, False otherwise.
+        """
+        system_prompt = """You are an expert at determining if a person mentioned in a documentary script warrants a dramatic newspaper-style introduction effect.
+
+Answer with ONLY "YES" or "NO" - no explanation needed.
+
+A person is newspaper-worthy if they are:
+- Historical figures (ancient to modern history)
+- Famous scientists, inventors, philosophers, artists, writers
+- Important political/military leaders
+- Significant cultural or religious figures
+- Anyone who would be featured in historical newspapers or documentaries
+
+NOT newspaper-worthy:
+- Generic modern people
+- Unnamed individuals
+- Common occupations without historical significance"""
+
+        user_prompt = f"""Person mentioned: {name}
+
+Context from script:
+{context[:300]}
+
+Should this person get a dramatic newspaper frame introduction?
+Answer: """
+
+        try:
+            # Run async LLM call in sync context
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            response = loop.run_until_complete(
+                ollama_chat(system_prompt, user_prompt, timeout=15)
+            )
+            loop.close()
+
+            response_clean = response.strip().upper()
+            is_worthy = "YES" in response_clean
+
+            logger.info(f"[character_inference] '{name}' newspaper-worthy: {is_worthy} (LLM: {response_clean[:50]})")
+            return is_worthy
+
+        except Exception as e:
+            logger.warning(f"[character_inference] LLM check failed for '{name}': {e}, defaulting to False")
+            return False
 
     def infer_gender(self, name: str) -> Optional[str]:
         """Infer gender from character name using historical name database.

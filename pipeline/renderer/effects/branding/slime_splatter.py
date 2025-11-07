@@ -2,6 +2,9 @@
 
 Displays an irregular blob shape resembling paint splatter or slime
 at a specified location on the frame.
+
+NOTE: Shape generation needs improvement for more organic appearance.
+Currently disabled from production use - available for manual testing only.
 """
 from __future__ import annotations
 
@@ -126,39 +129,32 @@ def apply_slime_splatter(
         # Fade-in animation
         fade_in_progress = min(1.0, t / animate_in) if animate_in > 0 else 1.0
         fade_in_progress = ease_in_out_cubic(fade_in_progress)
-        current_alpha = int(alpha * fade_in_progress)
+        current_alpha = alpha * fade_in_progress
 
-        # Create transparent base
-        overlay = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        # Create RGB overlay (no alpha channel in the numpy array)
+        overlay = np.zeros((h, w, 3), dtype=np.uint8)
 
-        # Create slime splatter
-        slime_splatter = Image.new("RGBA", (box_w, box_h), (0, 0, 0, 0))
-        slime_pixels = np.array(slime_splatter)
+        # Get slime mask as numpy array
         mask_array = np.array(slime_shape)
 
-        # Apply color and alpha
+        # Create colored slime region
+        slime_colored = np.zeros((box_h, box_w, 3), dtype=np.uint8)
         for i in range(3):
-            slime_pixels[:, :, i] = color[i]
-        slime_pixels[:, :, 3] = (mask_array * current_alpha / 255).astype(np.uint8)
+            slime_colored[:, :, i] = color[i]
 
-        slime_splatter = Image.fromarray(slime_pixels)
-        overlay.paste(slime_splatter, (box_x, box_y), slime_splatter)
+        # Apply mask to color (mask is 0-255, normalize to 0-1)
+        mask_normalized = mask_array.astype(np.float32) / 255.0
+        for i in range(3):
+            slime_colored[:, :, i] = (slime_colored[:, :, i] * mask_normalized).astype(np.uint8)
 
-        return np.array(overlay)
+        # Paste slime into overlay at position
+        overlay[box_y:box_y+box_h, box_x:box_x+box_w] = slime_colored
 
-    # Create overlay clip with proper alpha handling
-    def make_frame_rgb(t):
-        rgba = make_overlay_frame(t)
-        return rgba[:, :, :3]
+        return overlay
 
-    def make_mask_frame(t):
-        rgba = make_overlay_frame(t)
-        return rgba[:, :, 3] / 255.0
+    # Create overlay clip
+    overlay_clip = _VideoClip(make_overlay_frame, duration=dur)
 
-    overlay_clip = _VideoClip(make_frame_rgb, duration=dur)
-    mask_clip = _VideoClip(make_mask_frame, duration=dur, is_mask=True)
-    overlay_clip = overlay_clip.with_mask(mask_clip)
-
-    # Composite
-    result = CompositeVideoClip([clip, overlay_clip], size=(w, h))
+    # Composite with opacity
+    result = CompositeVideoClip([clip, overlay_clip.with_opacity(opacity)], size=(w, h))
     return result.with_duration(dur)

@@ -37,6 +37,7 @@ from config import (
     PROMPT_TRANSCRIPT_MAX_WORDS,
     EFFECTS_LLM_MODEL,
     SHARPNESS_WEIGHT,
+    ASPECT_WEIGHT,
 )
 from pipeline.prompts import CLIP_LABEL_GENERATION_TEMPLATE
 
@@ -158,13 +159,13 @@ def _sharpness_score(url_or_path: str) -> float:
         img = _open_image(url_or_path)
         # Convert to grayscale numpy array
         gray = np.array(img.convert('L'), dtype=np.float32)
-        
+
         # Simple gradient-based sharpness (approximates Laplacian)
         # Calculate horizontal and vertical gradients
         gy, gx = np.gradient(gray)
         # Sharpness is the sum of gradient magnitudes
         sharpness = np.sqrt(gx**2 + gy**2).mean()
-        
+
         # Normalize: typical sharp images have mean gradient > 10, blurry < 5
         # Map 0-20 range to 0-1 score
         score = min(sharpness / 20.0, 1.0)
@@ -173,6 +174,27 @@ def _sharpness_score(url_or_path: str) -> float:
     except Exception as e:
         logger.debug(f"[ai_filter] Sharpness check failed for {url_or_path[:60]}: {e}")
         return 0.5  # Neutral score if we can't check
+
+
+def _aspect_ratio_score(url_or_path: str) -> float:
+    """Calculate aspect ratio preference score. Returns 0-1 score with bonus for landscape."""
+    w, h = _get_image_size(url_or_path)
+    if w <= 0 or h <= 0:
+        return 0.5  # Neutral score if dimensions unknown
+
+    aspect_ratio = w / h
+
+    # Prefer landscape images (width > height)
+    # Score from 0.0 (very portrait) to 1.0 (very landscape)
+    if aspect_ratio >= 1.0:
+        # Landscape: aspect 1.0 → score 0.5, aspect 2.0+ → score 1.0
+        score = min(0.5 + (aspect_ratio - 1.0) / 2.0, 1.0)
+    else:
+        # Portrait: aspect 0.5 → score 0.0, aspect 1.0 → score 0.5
+        score = aspect_ratio * 0.5
+
+    logger.debug(f"[ai_filter] Aspect ratio for {url_or_path[:60]}: {aspect_ratio:.2f}, score={score:.3f}")
+    return score
 
 
 def _generate_contextual_labels(segments: List[VideoSegment], cache_path: str = LABEL_CACHE_PATH) -> Dict[str, List[str]]:
@@ -596,7 +618,8 @@ def _rank_for_segment(segment: Any, labels: Dict[str, List[str]]) -> Dict[str, A
             continue
         res_s = _resolution_score(path)
         sharp_s = _sharpness_score(path) if SHARPNESS_WEIGHT > 0 else 0.5
-        final = CLIP_WEIGHT * clip_s + RES_WEIGHT * res_s + SHARPNESS_WEIGHT * sharp_s
+        aspect_s = _aspect_ratio_score(path) if ASPECT_WEIGHT > 0 else 0.5
+        final = CLIP_WEIGHT * clip_s + RES_WEIGHT * res_s + SHARPNESS_WEIGHT * sharp_s + ASPECT_WEIGHT * aspect_s
 
         entry = {
             "id": str(i),
@@ -605,6 +628,7 @@ def _rank_for_segment(segment: Any, labels: Dict[str, List[str]]) -> Dict[str, A
             "clip_score": round(clip_s, 6),
             "resolution_score": round(res_s, 6),
             "sharpness_score": round(sharp_s, 6) if SHARPNESS_WEIGHT > 0 else 0.5,
+            "aspect_ratio_score": round(aspect_s, 6) if ASPECT_WEIGHT > 0 else 0.5,
             "final_score": round(final, 6),
         }
         all_ranked.append(entry)

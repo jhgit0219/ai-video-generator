@@ -12,7 +12,7 @@ CLIP-based semantic filtering and ranking of images for video segments.
 Images are ranked by weighted score:
 
 ```
-score = (CLIP_weight × clip_sim) + (RES_weight × res_score) + (SHARP_weight × sharp_score)
+score = (CLIP_weight × clip_sim) + (RES_weight × res_score) + (SHARP_weight × sharp_score) + (ASPECT_weight × aspect_score)
 ```
 
 **CLIP similarity (semantic match):**
@@ -33,6 +33,12 @@ score = (CLIP_weight × clip_sim) + (RES_weight × res_score) + (SHARP_weight ×
 - Weighted by `SHARPNESS_WEIGHT` (default 0.05)
 - Penalizes blurry images
 
+**Aspect ratio score:**
+
+- Prefers landscape images (width > height)
+- Weighted by `ASPECT_WEIGHT` (default 0.03)
+- Score 0.0 (very portrait) to 1.0 (very landscape)
+
 ## Configuration
 
 See `config.py`:
@@ -42,6 +48,7 @@ See `config.py`:
 - `CLIP_WEIGHT`: Semantic similarity weight (0.9 recommended)
 - `RES_WEIGHT`: Resolution quality weight
 - `SHARPNESS_WEIGHT`: Blur detection weight
+- `ASPECT_WEIGHT`: Landscape image preference weight
 
 **Filtering Thresholds:**
 

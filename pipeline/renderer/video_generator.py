@@ -259,7 +259,7 @@ class CinematicEffectsAgent:
                 name = str(tool.get("name", "")).strip()
                 params = tool.get("params", {}) or {}
 
-                # Inject pre-computed subject data for effects that need it
+                # Inject pre-computed subject data and visual description for effects that need it
                 if name in {"zoom_on_subject", "subject_pop", "character_highlight"} and segment and hasattr(segment, 'precomputed_subject_data') and segment.precomputed_subject_data:
                     precomp = segment.precomputed_subject_data
                     # Only inject if not already provided in params
@@ -269,6 +269,20 @@ class CinematicEffectsAgent:
                         if precomp.get("mask") is not None:
                             params["mask"] = precomp["mask"]
                         logger.debug(f"[effects] {name} using pre-computed bbox/mask (avoids CLIP loading)")
+
+                # Inject visual_description for zoom_on_subject to infer target object
+                if name == "zoom_on_subject" and segment:
+                    if "visual_description" not in params:
+                        # Combine visual_query, visual_description, and transcript for object detection
+                        desc_parts = [
+                            getattr(segment, "visual_query", ""),
+                            getattr(segment, "visual_description", ""),
+                            getattr(segment, "transcript", ""),
+                        ]
+                        combined_desc = " ".join([p for p in desc_parts if p])
+                        if combined_desc:
+                            params = dict(params)  # Make a copy to avoid mutating original
+                            params["visual_description"] = combined_desc
 
                 fn = TOOLS_REGISTRY.get(name)
                 if fn:
@@ -1094,7 +1108,10 @@ def render_final_video(segments: List[VideoSegment], audio_file: str, output_nam
                 t_type = str(t.get("type", DEFAULT_TRANSITION_TYPE)).lower()
                 t_dur = float(t.get("duration", DEFAULT_TRANSITION_DURATION) or 0.0)
             else:
-                t_type = str(DEFAULT_TRANSITION_TYPE).lower()
+                # Use branded transitions instead of crossfade for more variety
+                import random
+                branded_transitions = ["zoom_connect", "slide_left", "slide_right"]
+                t_type = random.choice(branded_transitions) if USE_CONTENT_AWARE_EFFECTS else str(DEFAULT_TRANSITION_TYPE).lower()
                 t_dur = float(DEFAULT_TRANSITION_DURATION or 0.0)
             # Last segment: no transition by default
             if i == len(segments) - 1:
