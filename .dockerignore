@@ -1,0 +1,59 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Data and outputs
+data/output/*
+data/temp_images/*
+!data/output/.gitkeep
+!data/temp_images/.gitkeep
+
+# Logs
+logs/*
+!logs/.gitkeep
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Git
+.git/
+.gitignore
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Docs
+*.md
+!README.md
+docs/
+
+# Test files
+tests/
+ignore/
+*test*.py
+debug_*.py
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Models (will download in container)
+weights/*.pt
+!weights/.gitkeep

@@ -1,0 +1,94 @@
+version: '3.8'
+
+services:
+  # Main application with GPU support
+  ai-video-generator-gpu:
+    build: .
+    container_name: ai-video-gen-gpu
+    runtime: nvidia
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    sysctls:
+      - net.ipv6.conf.all.disable_ipv6=1
+    environment:
+      - CUDA_VISIBLE_DEVICES=0
+      - VIDEO_CODEC=h264_nvenc
+      - USE_GPU=true
+      # LLM Models (can be changed to smaller/larger models)
+      - EFFECTS_LLM_MODEL=llama3           # Main effects planning (4GB)
+      - DEEPSEEK_MODEL=deepseek-coder:6.7b # Code generation (3.8GB)
+      # Alternative smaller models:
+      # - EFFECTS_LLM_MODEL=llama3.2:1b    # Smaller, faster (1.3GB)
+      # - DEEPSEEK_MODEL=deepseek-coder:1.3b # Smaller DeepSeek (1.3GB)
+    volumes:
+      - ./data/input:/app/data/input
+      - ./data/output:/app/data/output
+      - ./logs:/app/logs
+      - ollama-data:/root/.ollama  # Persist model downloads
+      # Development: Mount code for live updates (comment out for production)
+      - ./pipeline:/app/pipeline
+      - ./main.py:/app/main.py
+      - ./config.py:/app/config.py
+      - ./gradio_interface.py:/app/gradio_interface.py
+    ports:
+      - "7860:7860"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    profiles:
+      - gpu
+
+  # CPU-only fallback (no GPU required)
+  ai-video-generator-cpu:
+    build: .
+    container_name: ai-video-gen-cpu
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    sysctls:
+      - net.ipv6.conf.all.disable_ipv6=1
+    environment:
+      - VIDEO_CODEC=libx264
+      - USE_GPU=false
+      # LLM Models
+      - EFFECTS_LLM_MODEL=llama3
+      - DEEPSEEK_MODEL=deepseek-coder:6.7b
+    volumes:
+      - ./data/input:/app/data/input
+      - ./data/output:/app/data/output
+      - ./logs:/app/logs
+      - ollama-data:/root/.ollama  # Persist model downloads
+      # Development: Mount code for live updates (comment out for production)
+      - ./pipeline:/app/pipeline
+      - ./main.py:/app/main.py
+      - ./config.py:/app/config.py
+      - ./gradio_interface.py:/app/gradio_interface.py
+    ports:
+      - "7860:7860"
+    profiles:
+      - cpu
+
+  # Optional: Web UI proxy with HTTPS
+  nginx:
+    image: nginx:alpine
+    container_name: ai-video-gen-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - ai-video-generator-gpu
+    profiles:
+      - production
+
+# Named volumes for persistent data
+volumes:
+  ollama-data:
+    driver: local
