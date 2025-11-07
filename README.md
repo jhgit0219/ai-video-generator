@@ -9,25 +9,31 @@ An AI-powered video generation pipeline that transforms text scripts into cinema
 ### One-Click Setup (Windows)
 
 1. **Clone the repository:**
+
    ```bash
    git clone <repository-url>
    cd ai-video-generator
    ```
 
 2. **Run the installer:**
+
    ```bash
    INSTALL.bat
    ```
+
    This will:
+
    - Create a Python virtual environment
    - Install all dependencies
    - Download Ollama and AI models (llama3, deepseek-coder)
    - Create a desktop shortcut
 
 3. **Launch the web interface:**
+
    ```bash
    RUN.bat
    ```
+
    Or double-click the desktop shortcut created during installation.
 
 4. **Open your browser** at: http://localhost:7860
@@ -36,15 +42,28 @@ An AI-powered video generation pipeline that transforms text scripts into cinema
    - Click "Generate Video"
    - Download your completed video!
 
+**Note:** On first run, AI models will auto-download (~550MB total):
+
+- YOLO11x segmentation model (~200MB)
+- CLIP semantic ranking model (~350MB)
+- Ollama LLMs are downloaded during installation
+
+**If auto-download fails**, manually download and place models:
+
+- YOLO11x-seg: [Download from Ultralytics](https://github.com/ultralytics/assets/releases/download/v8.3.0/yolo11x-seg.pt) → Save to `weights/yolo11x-seg.pt`
+- Ollama models: Run `ollama pull llama3` and `ollama pull deepseek-coder:6.7b` manually
+
 ### Setup (Mac/Linux)
 
 1. **Clone the repository:**
+
    ```bash
    git clone <repository-url>
    cd ai-video-generator
    ```
 
 2. **Create virtual environment and install dependencies:**
+
    ```bash
    python3.11 -m venv venv
    source venv/bin/activate
@@ -52,7 +71,8 @@ An AI-powered video generation pipeline that transforms text scripts into cinema
    python -m spacy download en_core_web_sm
    ```
 
-3. **Install Ollama (optional, for LLM effects):**
+3. **Install Ollama (for LLM effects):**
+
    ```bash
    # Download from: https://ollama.com/download
    ollama pull llama3
@@ -60,12 +80,14 @@ An AI-powered video generation pipeline that transforms text scripts into cinema
    ```
 
 4. **Create .env file:**
+
    ```bash
    cp .env.example .env
    # Edit .env and set USE_PROXIES=False
    ```
 
 5. **Launch the web interface:**
+
    ```bash
    source venv/bin/activate
    python gradio_interface.py
@@ -73,15 +95,29 @@ An AI-powered video generation pipeline that transforms text scripts into cinema
 
 6. **Open your browser** at: http://localhost:7860
 
+**Note:** On first run, the following models will auto-download:
+
+- YOLO11x segmentation model (~200MB) - saved to `weights/yolo11x-seg.pt`
+- CLIP model (~350MB) - cached by HuggingFace Transformers
+- (Optional) Real-ESRGAN upscaling model - manual download required if `ENABLE_AI_UPSCALE=True`
+
+**If auto-download fails**, manually download and place models:
+
+- YOLO11x-seg: [Download from Ultralytics](https://github.com/ultralytics/assets/releases/download/v8.3.0/yolo11x-seg.pt) → Save to `weights/yolo11x-seg.pt`
+- Ollama models: Run `ollama pull llama3` and `ollama pull deepseek-coder:6.7b` manually
+- Real-ESRGAN (optional): [Download RealESRGAN_x4plus.pth](https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth) → Save to `weights/RealESRGAN_x4plus.pth`
+
 ### Manual Setup (Advanced)
 
 If you prefer manual setup or encounter issues with the web interface:
 
 1. **Place your files in `data/input/`:**
+
    - `my_script.json` (your video script)
    - `my_script.mp3` (your narration audio - must match script name)
 
 2. **Run the generator:**
+
    ```bash
    # Windows
    .\venv\Scripts\python.exe main.py my_script
@@ -106,6 +142,7 @@ python main.py my_story --clear-cache
 ```
 
 **File Naming Rules:**
+
 - If you only provide the script name: `python main.py my_story`
   - Looks for `my_story.json` and `my_story.mp3` with matching names
 - If you provide both: `python main.py my_story custom_audio`
@@ -247,6 +284,7 @@ Your JSON script should follow this structure:
 ```
 
 **Required Fields:**
+
 - `audio_file`: Audio filename (must be in `data/input/`)
 - `total_duration`: Total video duration in seconds
 - `segments`: Array of video segments with:
@@ -256,6 +294,7 @@ Your JSON script should follow this structure:
   - `visual_description`: Desired visual composition
 
 **Optional Fields:**
+
 - `topic`, `content_type`, `reasoning`: Metadata for LLM effects planning
 
 ### Tools Configuration
