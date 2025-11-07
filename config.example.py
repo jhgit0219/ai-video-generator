@@ -101,31 +101,40 @@ CAPTCHA_RANDOMIZE_UA = True
 # ------------------------------------------------------------
 # Proxy settings (for all image requests)
 # ------------------------------------------------------------
-# If you have a rotating proxy provider, set ROTATING_PROXY_ENDPOINT to the provider URL.
-# If you manage your own pool, list them in PROXY_LIST and choose rotation mode.
-# 
-# SECURITY: Replace these placeholder values with your actual credentials.
-# Format for proxy URL: "http://username:password@proxy-host:port"
-USE_PROXIES = False  # Set to True when you configure your proxy
-ROTATING_PROXY_ENDPOINT = ""  # Example: "http://user:pass@proxy.example.com:80"
-PROXY_LIST = [
-	# "http://username:password@proxy1.example.com:8080",
-	# "http://username:password@proxy2.example.com:8080",
-]
-PROXY_ROTATION_MODE = "round_robin"  # "round_robin" | "random"
-# Apply proxy also to Playwright fallback downloads (and optionally to Playwright browsing if enabled separately)
-PROXY_APPLY_TO_PLAYWRIGHT = True
-# Apply proxy to the main Google Images browsing as well (scraper sessions)
-PROXY_SCRAPER_BROWSING = True
-# Log external IP via a healthcheck endpoint when proxies are enabled
-PROXY_LOG_EXTERNAL_IP = True
-PROXY_HEALTHCHECK_URL = "https://ipv4.webshare.io/"  # Or your proxy provider's healthcheck URL
+# Proxy credentials are loaded from .env file for security
+# Example .env format:
+#   PROXY_USERNAME=your-username
+#   PROXY_PASSWORD=your-password
+#   PROXY_HOST=p.webshare.io
+#   PROXY_PORT=80
+
+# Build proxy URL from environment variables
+PROXY_USERNAME = os.getenv("PROXY_USERNAME", "")
+PROXY_PASSWORD = os.getenv("PROXY_PASSWORD", "")
+PROXY_HOST = os.getenv("PROXY_HOST", "")
+PROXY_PORT = os.getenv("PROXY_PORT", "80")
+
+# Construct the full proxy endpoint URL
+if PROXY_USERNAME and PROXY_PASSWORD and PROXY_HOST:
+    ROTATING_PROXY_ENDPOINT = f"http://{PROXY_USERNAME}:{PROXY_PASSWORD}@{PROXY_HOST}:{PROXY_PORT}"
+else:
+    ROTATING_PROXY_ENDPOINT = ""
+
+# Load other proxy settings from .env with fallback defaults
+USE_PROXIES = os.getenv("USE_PROXIES", "True").lower() == "true"
+PROXY_LIST = []  # Add additional proxies here if needed
+PROXY_ROTATION_MODE = os.getenv("PROXY_ROTATION_MODE", "round_robin")
+PROXY_APPLY_TO_PLAYWRIGHT = os.getenv("PROXY_APPLY_TO_PLAYWRIGHT", "True").lower() == "true"
+PROXY_SCRAPER_BROWSING = os.getenv("PROXY_SCRAPER_BROWSING", "True").lower() == "true"
+PROXY_LOG_EXTERNAL_IP = os.getenv("PROXY_LOG_EXTERNAL_IP", "True").lower() == "true"
+PROXY_HEALTHCHECK_URL = os.getenv("PROXY_HEALTHCHECK_URL", "https://ipv4.webshare.io/")
 
 # CLIP-based AI filtering
-ENABLE_CLIP_FILTER = True
+# NOTE: Text-to-text filtering disabled - trust Google's ranking + CLIP image-to-text ranking
+ENABLE_CLIP_FILTER = False
 # Minimum text-vs-text relevance (query vs alt/title) to accept a scraped image
 # Increase this to demand stricter semantic matches during scraping
-CLIP_RELEVANCE_THRESHOLD = 0.6
+CLIP_RELEVANCE_THRESHOLD = 0.5
 
 
 # ------------------------------------------------------------
@@ -151,22 +160,30 @@ USE_LLM_EFFECTS = True      # When True, use offline LLM to choose per-segment e
 USE_MICRO_BATCHING = True   # When True, batch segments together (10x fewer API calls, 78% token savings)
 EFFECTS_BATCH_SIZE = 10     # Number of segments per batch (default 10 = ~3.5K tokens per batch)
 USE_DEEPSEEK_EFFECTS = False  # When True, use DeepSeek for ALL segments (expensive, disables batching)
-USE_DEEPSEEK_SELECTIVE = False  # When True, use DeepSeek ONLY for complex segments flagged by batch planner
+USE_DEEPSEEK_SELECTIVE = True  # When True, use DeepSeek ONLY for complex segments that need custom code
 EFFECTS_LLM_MODEL = "llama3"  # Ollama model name
 DEEPSEEK_MODEL = "deepseek-coder:6.7b"  # DeepSeek model for code generation
+
+# Custom instructions for effects director (optional)
+# Use this to guide the effects director with specific creative requirements
+# Example: "Make sure there's subject focus edits displaying the subject's name"
+# Leave empty string "" for default behavior
+EFFECTS_CUSTOM_INSTRUCTIONS = ""
 
 # Ranking weights and behavior
 # Increase CLIP weight to prioritize semantic relevance over resolution
 CLIP_WEIGHT = 0.9           # Weight for semantic (CLIP) similarity
 RES_WEIGHT = 0.05            # Weight for resolution quality
 SHARPNESS_WEIGHT = 0.05      # Weight for image sharpness (blur detection)
+ASPECT_WEIGHT = 0.03         # Weight for aspect ratio preference (landscape bonus)
 MAX_RES_MP = 2.0             # 2 megapixels and above gets full quality score
 HTTP_TIMEOUT = 10            # Timeout (s) for image downloads in ranking
 CACHE_DIR = f"{TEMP_IMAGES_DIR}/.cache"  # Cache folder for CLIP/size data
 
 # Additional ranking constraints/tuning
 # Discard candidates whose image<->text CLIP similarity falls below this floor
-RANK_MIN_CLIP_SIM = 0.18
+# Lowered from 0.18 to 0.12 to be more permissive (visual inspection shows good images being rejected)
+RANK_MIN_CLIP_SIM = 0.25  # Minimum CLIP similarity for image selection (raised from 0.12 to improve quality)
 # Minimum confidence threshold for including composition/quality labels in CLIP captions
 # Labels with confidence below this won't be added to image captions
 CLIP_CAPTION_CONFIDENCE_THRESHOLD = 0.25
@@ -204,7 +221,7 @@ ALLOW_LLM_TRANSITIONS = True
 # Content-Aware Branding Effects
 # ------------------------------------------------------------
 # Automatically detect locations/characters and apply branded effects
-USE_CONTENT_AWARE_EFFECTS = True
+USE_CONTENT_AWARE_EFFECTS = bool(os.getenv("USE_CONTENT_AWARE_EFFECTS", "True").lower() in ("true", "1"))
 
 # spaCy model for Named Entity Recognition
 # Options: "en_core_web_sm" (fast), "en_core_web_md" (accurate), "en_core_web_lg" (best)
