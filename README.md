@@ -375,23 +375,52 @@ The system includes 24+ built-in effects that are automatically applied by the L
 
 ### Key Settings in `config.py`
 
-**Video Quality:**
+> **IMPORTANT:** Set `SKIP_FLAG = False` in `config.py` for normal operation. When `SKIP_FLAG = True`, the pipeline skips image scraping and uses cached images only (for testing).
+
+**Image Processing:**
 
 ```python
-RENDER_SIZE = (1920, 1080)        # Output resolution
-FPS = 30                          # Frames per second (5 for tests, 30 for production)
-VIDEO_CODEC = "h264_nvenc"        # Hardware encoder (NVIDIA)
-VIDEO_BITRATE = "4000k"
+SKIP_FLAG = False                 # MUST be False for normal operation (True = testing only)
+IMAGE_SIZE = (1920, 1080)         # Image processing size
+RENDER_SIZE = (1920, 1080)        # Final video output resolution
+IMAGE_QUALITY = 95                # JPEG quality (1-100)
+```
+
+**Video Encoding:**
+
+```python
+FPS = 30                          # Frames per second
+VIDEO_CODEC = "h264_nvenc"        # Hardware encoder (NVIDIA/AMD/Intel/CPU)
+AUDIO_CODEC = "aac"               # Audio codec
+VIDEO_BITRATE = "4000k"           # Video bitrate
+AUDIO_BITRATE = "192k"            # Audio bitrate
 PRESET = "p4"                     # NVENC preset (p1=fastest, p7=best quality)
 ```
 
 **AI Models:**
 
 ```python
+# CLIP (for semantic image ranking)
+CLIP_MODEL_NAME = "openai/clip-vit-base-patch32"
+DEVICE = "cuda"                   # GPU device (auto-fallback to "cpu")
+
+# LLM Effects Director (Ollama)
 USE_LLM_EFFECTS = True            # Enable Ollama effects director
-EFFECTS_LLM_MODEL = "llama3"      # Ollama model name
+EFFECTS_LLM_MODEL = "llama3"      # Primary Ollama model
+DEEPSEEK_MODEL = "deepseek-coder:6.7b"  # For complex code generation
+USE_MICRO_BATCHING = True         # Batch segments (10x fewer API calls)
+USE_DEEPSEEK_SELECTIVE = True     # Use DeepSeek only for complex segments
+
+# Real-ESRGAN (AI upscaling)
 ENABLE_AI_UPSCALE = True          # Enable Real-ESRGAN upscaling
 UPSCALE_FACTOR = 4                # 2x or 4x upscaling
+UPSCALE_MODEL = "RealESRGAN_x4plus.pth"
+```
+
+**Content-Aware Effects:**
+
+```python
+USE_CONTENT_AWARE_EFFECTS = True  # Enable branded effects kit
 ```
 
 **Image Ranking:**
@@ -400,16 +429,36 @@ UPSCALE_FACTOR = 4                # 2x or 4x upscaling
 CLIP_WEIGHT = 0.9                 # Semantic similarity weight
 RES_WEIGHT = 0.05                 # Resolution quality weight
 SHARPNESS_WEIGHT = 0.05           # Blur detection weight
-RANK_MIN_CLIP_SIM = 0.18          # Minimum similarity threshold
+ASPECT_WEIGHT = 0.03              # Landscape aspect ratio bonus
+RANK_MIN_CLIP_SIM = 0.25          # Minimum CLIP similarity to accept image
+MAX_RES_MP = 2.0                  # Resolution megapixels for max quality score
+
+# Director Agent requery behavior
+DIRECTOR_MAX_RETRIES = 1          # LLM requery attempts per segment (0 = disabled)
+SCRAPER_REQUERY_MAX_RETRIES = 1   # In-scraper requery attempts (0 = disabled)
 ```
 
-**Scraping:**
+**Image Scraping:**
 
 ```python
 MAX_SCRAPED_IMAGES = 3            # Images to download per segment
 SCROLL_PAUSES = 3                 # Scroll actions per search
-ENABLE_CLIP_FILTER = True         # Filter during scraping
-CLIP_RELEVANCE_THRESHOLD = 0.5    # Min similarity during scraping
+SCROLL_SLEEP = 1.5                # Seconds between scrolls
+PLAYWRIGHT_HEADFUL = False        # Show browser (set True for debugging)
+ENABLE_CLIP_FILTER = False        # Disable in-scraper filtering (trust Google + post-scrape CLIP)
+CLIP_RELEVANCE_THRESHOLD = 0.5    # Min similarity during scraping (if ENABLE_CLIP_FILTER=True)
+
+# CAPTCHA handling: "manual", "retry", or "skip"
+CAPTCHA_HANDLING = "retry"        # Retry with fresh context on CAPTCHA
+CAPTCHA_MAX_RETRIES = 2           # Max retry attempts
+```
+
+**Performance:**
+
+```python
+PARALLEL_RENDER_METHOD = "parallel_v2"  # Parallel chunk rendering (4-8x speedup)
+MAX_WORKERS = 4                   # Worker processes (2 for 8GB RAM, 4 for 16GB, 6 for 32GB)
+CHUNK_DURATION = 20               # Seconds per batch
 ```
 
 ## 🏗️ Architecture

@@ -4,9 +4,16 @@ Contains paths, model settings, and processing parameters.
 
 SETUP INSTRUCTIONS:
 1. Copy this file to 'config.py': cp config.example.py config.py
-2. Edit config.py and add your sensitive credentials (proxy, API keys, etc.)
-3. Never commit config.py to version control (already in .gitignore)
+2. Create a .env file with your proxy credentials (see .env.example)
+3. Edit config.py if you need to customize any settings
+4. Never commit config.py or .env to version control (already in .gitignore)
 """
+
+import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # ------------------------------------------------------------
 # File paths (directories, not individual files)
@@ -26,7 +33,7 @@ MAX_IMAGES_PER_SEGMENT = 5
 IMAGE_SIZE = (1920, 1080)  # 720p landscape output (faster processing)
 RENDER_SIZE = (1920, 1080)  # Use cached 1080p images, downscale to 720p at end
 IMAGE_QUALITY = 95
-SKIP_FLAG = False
+SKIP_FLAG = False  # IMPORTANT: Set to False for normal operation (True skips scraping, uses cache only)
 
 # AI Image Enhancement (Upscaling & Sharpening)
 ENABLE_AI_UPSCALE = True      # Enable Real-ESRGAN AI upscaling (requires realesrgan package)
@@ -39,10 +46,33 @@ SHARPEN_STRENGTH = 1.5        # 1.0 = normal, 1.5 = moderate, 2.0 = strong
 CACHE_ENHANCED_IMAGES = True  # Disable only if you want to force re-enhancement
 
 # Parallel Frame Rendering (for faster video encoding)
-PARALLEL_RENDER_METHOD = "disabled"  # "disk", "pipe", "chunk", or "disabled"
-FRAME_RENDER_WORKERS = None  # Number of workers (None = auto-detect CPU count)
+# Options: "parallel_v2" (recommended), "disk", "pipe", "chunk", or "disabled"
+# - parallel_v2: TRUE parallel chunk rendering (4-8x speedup, no pickling issues)
+# - disk: Render frames to disk in parallel, then encode
+# - pipe: Pipe frames directly to FFMPEG (saves disk I/O)
+# - chunk: Render time chunks in parallel (old implementation, has pickling issues)
+# - disabled: Use single-threaded MoviePy rendering
+PARALLEL_RENDER_METHOD = "parallel_v2"
+FRAME_RENDER_WORKERS = None  # Number of workers (None = auto-detect CPU count, capped at MAX_WORKERS)
+
+# Memory and CPU limits to prevent system crashes
+# CRITICAL: Each worker loads YOLO (500MB) + CLIP (350MB) + video frames (varies)
+# Estimate: ~1-2GB RAM per worker depending on video complexity
+#
+# IMPORTANT: More workers = faster rendering BUT more memory!
+# With 6 batches:
+#   2 workers = 3 rounds of rendering (batch 0-1, then 2-3, then 4-5)
+#   4 workers = 2 rounds of rendering (batch 0-3, then 4-5)
+#   6 workers = 1 round (all batches in parallel) - FASTEST but needs ~12GB RAM!
+#
+# Recommended settings:
+#   8GB RAM:  MAX_WORKERS=2, CHUNK_DURATION=30
+#   16GB RAM: MAX_WORKERS=4, CHUNK_DURATION=20
+#   32GB RAM: MAX_WORKERS=6, CHUNK_DURATION=15
+MAX_WORKERS = 4  # Maximum worker processes (increase if you have 16GB+ RAM)
+THREADS_PER_WORKER = 2  # MoviePy threads per worker (total threads = MAX_WORKERS * THREADS_PER_WORKER)
 FRAME_SEQUENCE_QUALITY = 95  # JPEG quality for disk/pipe methods (1-100)
-CHUNK_DURATION = 10  # Seconds per chunk for chunk method
+CHUNK_DURATION = 20  # Seconds per batch (smaller = more batches = more parallelism, but more overhead)
 
 
 # ------------------------------------------------------------
