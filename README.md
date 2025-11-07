@@ -214,7 +214,8 @@ Your JSON script should follow this structure:
 ```json
 {
   "audio_file": "my_audio.mp3",
-  "total_duration": 15.5,
+  "total_duration": 10.0,
+  "generation_method": "narrative pacing with visual-emotional pairing",
   "segments": [
     {
       "start_time": 0.0,
@@ -233,9 +234,22 @@ Your JSON script should follow this structure:
       "duration": 5.0,
       "transcript": "Hidden treasures await those brave enough to seek them.",
       "visual_query": "treasure chest gold artifacts cave",
-      "visual_description": "Close-up of an ancient treasure chest filled with gold"
+      "visual_description": "Close-up of an ancient treasure chest filled with gold",
+      "topic": "Rising action",
+      "content_type": "narrative_event",
+      "reasoning": "Build excitement and anticipation"
     }
-  ]
+  ],
+  "summary": {
+    "total_segments": 2,
+    "average_duration": 5.0,
+    "min_duration": 5.0,
+    "max_duration": 5.0,
+    "segments_under_7s": 2,
+    "segments_7s_or_over": 0,
+    "topic_shifts_detected": 2,
+    "engagement_notes": "Consistent 5-second pacing for clear narrative flow."
+  }
 }
 ```
 
@@ -243,19 +257,27 @@ Your JSON script should follow this structure:
 
 - `audio_file`: Audio filename (must be in `data/input/`)
 - `total_duration`: Total video duration in seconds
+- `generation_method`: Description of pacing/generation approach
 - `segments`: Array of video segments with:
-  - `start_time`, `end_time`, `duration`: Timing information
-  - `transcript`: Narration text
-  - `visual_query`: Search query for images
+  - `start_time`, `end_time`, `duration`: Timing information (in seconds)
+  - `transcript`: Narration text for this segment
+  - `visual_query`: Search query for finding images
   - `visual_description`: Desired visual composition
+  - `topic`: Segment topic/theme
+  - `content_type`: Type of content (e.g., "narrative_hook", "narrative_event")
+  - `reasoning`: Creative direction notes
+- `summary`: Statistics and metadata about the script:
+  - `total_segments`: Number of segments
+  - `average_duration`, `min_duration`, `max_duration`: Duration stats (seconds)
+  - `segments_under_7s`, `segments_7s_or_over`: Pacing distribution counts
+  - `topic_shifts_detected`: Number of topic transitions
+  - `engagement_notes`: Notes about pacing and timing strategy
 
-**Optional Fields:**
+### Tools Configuration (Optional - Advanced)
 
-- `topic`, `content_type`, `reasoning`: Metadata for LLM effects planning
+For advanced users who want manual control over effects, you can create a `tools.json` file to define parametric effects per segment. **This is optional** - the LLM effects director (`USE_LLM_EFFECTS=True` in config) automatically plans effects based on your script content.
 
-### Tools Configuration
-
-Create a `tools.json` file to define parametric effects:
+Example `tools.json` for manual effects:
 
 ```json
 [
@@ -296,109 +318,58 @@ Create a `tools.json` file to define parametric effects:
 ]
 ```
 
-## 🎬 Effects Reference
+## 🎬 Available Effects
 
-### Zoom Effects
+The system includes 24+ built-in effects that are automatically applied by the LLM effects director. For advanced users, these can be manually configured via `tools.json`.
 
-**`zoom_on_subject`** - Geometric zoom with face anchoring
+### Motion & Zoom (3 effects)
 
-```json
-{
-  "name": "zoom_on_subject",
-  "params": {
-    "target": "person", // YOLO class: person, girl, boy, etc.
-    "prefer": "center", // If multiple: center, left, right
-    "target_scale": 1.55, // Zoom factor (1.0 = no zoom)
-    "speed_curve": "easeInOut", // linear, easeInOut
-    "anim_duration": 3.0, // Complete by 3s, then hold
-    "anchor_feature": "auto" // auto (face), center, or custom
-  }
-}
-```
+- **`zoom_on_subject`** - Geometric zoom with face anchoring
+- **`temporal_zoom`** - Digital zoom overlay with smooth easing
+- **`zoom_then_panel`** - Combined zoom + text panel effect
 
-**`temporal_zoom`** - Digital zoom overlay
+### Text Overlays (1 effect)
 
-```json
-{
-  "name": "temporal_zoom",
-  "params": {
-    "scale": 1.3, // Target zoom scale
-    "ease": "easeInOut", // Easing curve
-    "start_scale": 1.0, // Starting scale
-    "method": "transform" // transform or sequence
-  }
-}
-```
+- **`paneled_text`** - Large styled text panels with typewriter animation
 
-### Text Overlays
+### Subject Effects (2 effects)
 
-**`paneled_text`** - Styled text panel with typewriter effect
+- **`subject_outline`** - Expanded ring outline with glow and pulse
+- **`subject_pop`** - Silhouette pop effect with face-centered framing
 
-```json
-{
-  "name": "paneled_text",
-  "params": {
-    "text": "Title Text",
-    "side": "right", // left, right
-    "fontsize": 128,
-    "panel_opacity": 0.55, // 0-1
-    "border_color": [80, 220, 255], // RGB
-    "animate_in": 0.35, // Slide-in duration (seconds)
-    "cps": 10, // Characters per second (typewriter)
-    "start_time": 3.0, // When to appear
-    "duration": 2.5, // How long to stay visible
-    "min_panel_width_px": 640,
-    "min_panel_height_px": 220
-  }
-}
-```
+### Visual Overlays (2 effects)
 
-### Subject Effects
+- **`neon_overlay`** - Color wash with blend modes (screen, multiply, overlay, add)
+- **`nightvision`** - Green tint night vision effect with scanlines
 
-**`subject_outline`** - Expanded ring outline with glow
+### Flash & Pulse Effects (3 effects)
 
-```json
-{
-  "name": "subject_outline",
-  "params": {
-    "color": [57, 255, 20], // RGB
-    "thickness": 8, // Outline width (pixels)
-    "offset": 12, // Gap from subject (pixels)
-    "glow_radius": 15, // Blur amount for glow
-    "opacity": 0.85, // 0-1
-    "pulse": true // Animate opacity over time
-  }
-}
-```
+- **`flash_pulse`** - Pulsing white flash effect
+- **`quick_flash`** - Quick camera flash
+- **`strobe_effect`** - Strobe light effect
 
-**`subject_pop`** - Silhouette pop with face centering
+### Color Grading (5 effects)
 
-```json
-{
-  "name": "subject_pop",
-  "params": {
-    "scale": 1.2, // Pop scale factor
-    "pop_duration": 0.4, // Animation duration (seconds)
-    "shadow_opacity": 0.35 // Drop shadow intensity
-  }
-}
-```
+- **`color_grade`** - Custom color grading
+- **`warm_grade`** - Warm color tone
+- **`cool_grade`** - Cool color tone
+- **`desaturated_grade`** - Black and white / desaturated look
+- **`teal_orange_grade`** - Cinematic teal and orange color grade
 
-### Visual Overlays
+### Branding Effects (8 effects)
 
-**`neon_overlay`** - Color wash with blend modes
+**Atomic Effects:**
+- **`slime_splatter`** - Animated slime splatter overlay
+- **`full_frame_tint`** - Full-frame color tint
+- **`animated_location_text`** - Animated location/place name text
+- **`subject_glow`** - Glow effect around detected subjects
 
-```json
-{
-  "name": "neon_overlay",
-  "params": {
-    "color": [80, 220, 255], // RGB
-    "opacity": 0.06, // 0-1
-    "blend_mode": "screen", // screen, multiply, overlay, add
-    "animate_in": 0.2 // Fade-in duration
-  }
-}
-```
+**Composite Effects:**
+- **`map_highlight`** - Highlight locations on maps with markers
+- **`character_highlight`** - Highlight character introductions
+- **`news_overlay`** - News broadcast style overlay
+- **`newspaper_frame`** - Vintage newspaper frame effect
+- **`branded_transition`** - Branded swipe/zoom transitions
 
 ## ⚙️ Configuration
 
