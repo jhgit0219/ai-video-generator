@@ -182,5 +182,4 @@ wrapt==2.0.0
 wsproto==1.2.0
 yapf==0.43.0
 yarl==1.22.0
-yolov5==7.0.14
-yolov8==0.0.2
+# yolov5 and yolov8 not needed - using ultralytics==8.3.223 instead
