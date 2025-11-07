@@ -304,6 +304,37 @@ def generate_video(input_json_path: str, audio_file: str) -> Optional[str]:
     return asyncio.run(async_generate_video(input_json_path, audio_file))
 
 
+def full_pipeline(
+    script_path: str,
+    output_path: str,
+    enable_agents: bool = True,
+    progress_callback: Optional[callable] = None,
+    audio_path: Optional[str] = None
+) -> str:
+    """Simplified pipeline for Gradio web interface.
+
+    :param script_path: Path to input JSON script.
+    :param output_path: Path for output video file.
+    :param enable_agents: Enable segment analysis agents (Wikipedia, visual style).
+    :param progress_callback: Optional callback for progress updates (stage_name, percent).
+    :param audio_path: Optional audio file for background music/narration.
+    :return: Path to generated video file.
+    """
+    def update_progress(stage: str, percent: float):
+        """Update progress if callback provided."""
+        if progress_callback:
+            progress_callback(stage, percent)
+
+    update_progress("Initializing", 0.05)
+
+    # Run async pipeline
+    result = asyncio.run(async_generate_video(script_path, audio_path))
+
+    update_progress("Complete", 1.0)
+
+    return output_path if result else None
+
+
 if __name__ == "__main__":
     # Setup argument parser
     parser = argparse.ArgumentParser(
