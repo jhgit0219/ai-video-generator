@@ -111,3 +111,7 @@ weights/
 
 # Development and testing directory (contains all debug/test scripts)
 ignore/
+
+# Docs directories with local-only content
+docs/brand-kit/
+docs/plans/
