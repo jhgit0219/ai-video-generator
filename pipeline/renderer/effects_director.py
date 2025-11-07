@@ -13,13 +13,14 @@ If anything fails, returns None and the caller should fallback to heuristics.
 from __future__ import annotations
 
 import json
+import random
 import re
 import subprocess
 from typing import Any, Dict, Optional
 
 from utils.logger import setup_logger
 from config import EFFECTS_LLM_MODEL, EFFECTS_CUSTOM_INSTRUCTIONS
-from prompts import EFFECTS_DIRECTOR_SYSTEM_PROMPT
+from pipeline.prompts import EFFECTS_DIRECTOR_SYSTEM_PROMPT
 
 logger = setup_logger(__name__)
 
@@ -34,6 +35,19 @@ except ImportError:
 
 # Character introduction tracker - maintains state across segment processing
 _introduced_characters = set()
+
+# Transition budget tracker - maintains state across segment processing
+_transition_budget = {
+    "swipe": 0,
+    "zoom_connect": 0,
+    "crossfade": 0,
+    "total": 0
+}
+_transition_counts = {
+    "swipe": 0,
+    "zoom_connect": 0,
+    "crossfade": 0
+}
 
 def _detect_subjects_in_content(transcript: str, clip_caption: str) -> list:
     """
@@ -112,6 +126,179 @@ def reset_character_tracker():
     global _introduced_characters
     _introduced_characters = set()
     logger.info("[effects_director] Character introduction tracker reset")
+
+
+def initialize_transition_budget(total_segments: int):
+    """Initialize transition budget based on total number of segments.
+
+    Distribution:
+    - 50% swipes
+    - 25% zoom_connect
+    - 25% crossfade
+
+    :param total_segments: Total number of segments in the video
+    """
+    global _transition_budget, _transition_counts
+
+    # Number of transitions = segments - 1 (no transition after last segment)
+    total_transitions = max(0, total_segments - 1)
+
+    # Calculate budget for each type (round to ensure we use all transitions)
+    swipe_count = round(total_transitions * 0.5)
+    zoom_count = round(total_transitions * 0.25)
+    crossfade_count = total_transitions - swipe_count - zoom_count  # Remainder
+
+    _transition_budget = {
+        "swipe": swipe_count,
+        "zoom_connect": zoom_count,
+        "crossfade": crossfade_count,
+        "total": total_transitions
+    }
+
+    _transition_counts = {
+        "swipe": 0,
+        "zoom_connect": 0,
+        "crossfade": 0
+    }
+
+    logger.info(f"[effects_director] Transition budget initialized: {total_transitions} total transitions")
+    logger.info(f"[effects_director]   Swipes: {swipe_count} (50%)")
+    logger.info(f"[effects_director]   Zoom connects: {zoom_count} (25%)")
+    logger.info(f"[effects_director]   Crossfades: {crossfade_count} (25%)")
+
+
+def _get_transition_budget_status() -> str:
+    """Get current transition budget status as a formatted string for the LLM.
+
+    :return: Formatted string showing remaining budget for each transition type
+    """
+    remaining_swipes = _transition_budget["swipe"] - _transition_counts["swipe"]
+    remaining_zooms = _transition_budget["zoom_connect"] - _transition_counts["zoom_connect"]
+    remaining_crossfades = _transition_budget["crossfade"] - _transition_counts["crossfade"]
+
+    return (
+        f"TRANSITION BUDGET REMAINING:\n"
+        f"- Swipes (slide_left/right/up/down): {remaining_swipes} left (use for fast cuts, action, location changes)\n"
+        f"- Zoom connects: {remaining_zooms} left (use for dramatic reveals, connecting related scenes)\n"
+        f"- Crossfades: {remaining_crossfades} left (use for smooth flow, time passing, continuous narrative)\n"
+    )
+
+
+def _select_transition_from_llm_choice(
+    llm_choice: str,
+    segment_idx: int,
+    total_segments: int
+) -> tuple[str, float]:
+    """Select final transition based on LLM choice and budget constraints.
+
+    Respects the LLM's choice if budget allows, otherwise picks from available types.
+
+    :param llm_choice: Transition type chosen by LLM
+    :param segment_idx: Current segment index
+    :param total_segments: Total number of segments
+    :return: Tuple of (transition_type, duration)
+    """
+    global _transition_counts
+
+    # Last segment never has a transition
+    if segment_idx >= total_segments - 1:
+        return ("none", 0.0)
+
+    # Map LLM choice to budget category
+    if llm_choice in {"slide_left", "slide_right", "slide_up", "slide_down"}:
+        category = "swipe"
+        duration = 0.6
+    elif llm_choice == "zoom_connect":
+        category = "zoom_connect"
+        duration = 0.6
+    elif llm_choice == "crossfade":
+        category = "crossfade"
+        duration = 1.0
+    else:
+        category = "crossfade"  # Default fallback
+        duration = 1.0
+
+    # Check if we have budget for this category
+    remaining = _transition_budget[category] - _transition_counts[category]
+
+    if remaining > 0:
+        # LLM's choice is available, use it
+        _transition_counts[category] += 1
+        final_choice = llm_choice
+
+        logger.info(f"[effects_director] Transition {segment_idx}: LLM chose '{llm_choice}' - APPROVED "
+                   f"({_transition_counts[category]}/{_transition_budget[category]} {category}s used)")
+    else:
+        # Budget exhausted for this category, find alternative
+        # Priority: prefer what's most available
+        alternatives = []
+        for cat in ["swipe", "zoom_connect", "crossfade"]:
+            remaining_cat = _transition_budget[cat] - _transition_counts[cat]
+            if remaining_cat > 0:
+                alternatives.append((cat, remaining_cat))
+
+        if not alternatives:
+            # No budget left at all (shouldn't happen but handle gracefully)
+            logger.warning(f"[effects_director] Transition budget exhausted! Using crossfade as fallback")
+            return ("crossfade", 1.0)
+
+        # Pick category with most remaining budget
+        alternatives.sort(key=lambda x: x[1], reverse=True)
+        fallback_category = alternatives[0][0]
+
+        # Map category to specific transition
+        if fallback_category == "swipe":
+            # Cycle through swipe directions
+            swipe_types = ["slide_left", "slide_right", "slide_up", "slide_down"]
+            final_choice = swipe_types[_transition_counts["swipe"] % 4]
+            duration = 0.6
+        elif fallback_category == "zoom_connect":
+            final_choice = "zoom_connect"
+            duration = 0.6
+        else:  # crossfade
+            final_choice = "crossfade"
+            duration = 1.0
+
+        _transition_counts[fallback_category] += 1
+
+        logger.info(f"[effects_director] Transition {segment_idx}: LLM chose '{llm_choice}' but budget exhausted - "
+                   f"using '{final_choice}' instead ({_transition_counts[fallback_category]}/{_transition_budget[fallback_category]} {fallback_category}s used)")
+
+    return (final_choice, duration)
+
+
+def _choose_weighted_transition() -> tuple[str, float]:
+    """Choose a transition type using weighted random selection.
+
+    Distribution:
+    - 50% swipes (slide_left, slide_right, slide_up, slide_down)
+    - 25% zoom_connect
+    - 25% crossfade
+
+    :return: Tuple of (transition_type, duration)
+    """
+    # Weighted transition pool
+    transitions = [
+        # 50% swipes (12.5% each direction)
+        ("slide_left", 0.6),
+        ("slide_left", 0.6),
+        ("slide_right", 0.6),
+        ("slide_right", 0.6),
+        ("slide_up", 0.6),
+        ("slide_up", 0.6),
+        ("slide_down", 0.6),
+        ("slide_down", 0.6),
+        # 25% zoom_connect (2 entries for 25%)
+        ("zoom_connect", 0.6),
+        ("zoom_connect", 0.6),
+        # 25% crossfade (2 entries for 25%)
+        ("crossfade", 1.0),
+        ("crossfade", 1.0),
+    ]
+
+    chosen = random.choice(transitions)
+    logger.debug(f"[effects_director] Weighted transition selected: {chosen[0]} ({chosen[1]}s)")
+    return chosen
 
 
 def _extract_json(text: str) -> Optional[Dict[str, Any]]:
@@ -220,6 +407,9 @@ def get_effect_plan(segment, idx: int, total: int) -> Optional[Dict[str, Any]]:
             f"{'='*60}\n"
         )
 
+    # Add transition budget status
+    budget_status = _get_transition_budget_status()
+
     user = (
         f"Segment {idx+1} of {total}.\n\n"
         f"NARRATIVE CONTEXT:\n"
@@ -230,9 +420,11 @@ def get_effect_plan(segment, idx: int, total: int) -> Optional[Dict[str, Any]]:
         f"{orientation_hint}"
         f"{custom_instructions_section}"
         f"{intro_alert}\n\n"
+        f"{budget_status}\n\n"
         f"TASK: Analyze the image content (especially the CLIP Analysis which describes the actual downloaded image) "
         f"and narrative. Choose motion that reveals the story cinematically.\n"
-        f"The CLIP Analysis tells you what the image actually contains - use this to make informed motion decisions.\n\n"
+        f"The CLIP Analysis tells you what the image actually contains - use this to make informed motion decisions.\n"
+        f"For the transition to the NEXT segment, consider the remaining budget and what type best serves the narrative flow.\n\n"
         "Return strictly JSON as specified. No commentary, no backticks."
     )
 
@@ -296,24 +488,18 @@ def get_effect_plan(segment, idx: int, total: int) -> Optional[Dict[str, Any]]:
         fade_in = _clamp(plan.get("fade_in", 0.3 if idx == 0 else 0.1))
         fade_out = _clamp(plan.get("fade_out", 0.8 if idx == total - 1 else 0.0))
 
-        # Transition normalization (optional)
+        # Transition selection: Use LLM choice with budget enforcement
+        # Parse LLM's transition choice
         trans = plan.get("transition") or {}
-        # Handle if LLM returns transition as string instead of dict
         if isinstance(trans, str):
             trans = {"type": trans, "duration": 1.0}
         elif not isinstance(trans, dict):
             trans = {"type": "crossfade", "duration": 1.0}
-        
-        t_type = str(trans.get("type", "crossfade")).lower()  # Default to crossfade for flow
-        if t_type not in {"none", "crossfade", "slide_left", "slide_right", "slide_up", "slide_down"}:
-            t_type = "crossfade"
-        def _clamp_t(v):
-            try:
-                x = float(v)
-            except Exception:
-                x = 1.0
-            return max(0.0, min(2.0, x))
-        t_dur = _clamp_t(trans.get("duration", 1.0))
+
+        llm_t_type = str(trans.get("type", "crossfade")).lower()
+
+        # Apply budget-aware selection (respects LLM choice if budget allows)
+        t_type, t_dur = _select_transition_from_llm_choice(llm_t_type, idx, total)
 
         normalized = {
             "motion": motion,

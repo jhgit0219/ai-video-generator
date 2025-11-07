@@ -211,12 +211,15 @@ def detect_anchor_feature(
                                 best_idx = int(conf_tensor.argmax())
                                 bbox = boxes.xyxy[best_idx].cpu().numpy()
                                 
-                                # Face is in the upper 20% of detected person
+                                # Face is in the upper region of detected person
                                 px1, py1, px2, py2 = bbox
                                 person_height = py2 - py1
-                                
-                                # Face center: 15% down from top of person bbox
-                                face_y_center = py1 + person_height * 0.15
+
+                                # Face center (eyes/nose region): 25% down from top
+                                # This works for both full-body shots and bust statues
+                                # For busts: 25% is around eyes/nose (avoids beard)
+                                # For full-body: 25% is upper head region (good anchor)
+                                face_y_center = py1 + person_height * 0.25
                                 face_x_center = (px1 + px2) / 2
                                 
                                 # Convert back to absolute image coordinates
@@ -1024,6 +1027,95 @@ def _score_detections(
             best_idx = i
 
     return best_idx
+
+
+def detect_adaptive_face_anchor(
+    image_rgb: np.ndarray,
+    target: Optional[str] = None,
+    prefer: Optional[str] = None,
+    nth: Optional[int] = None,
+) -> Optional[Tuple[int, int]]:
+    """Detect face anchor using adaptive percentage based on person bbox aspect ratio.
+
+    This function directly uses YOLO to detect person bounding box, then calculates
+    face position based on the bbox aspect ratio (height/width):
+
+    - Full body (aspect > 1.4): Face at 12% from top
+    - Half body (0.7 < aspect <= 1.4): Face at 25% from top
+    - Bust (aspect <= 0.7): Face at 50% from top
+
+    Args:
+        image_rgb: RGB image as numpy array.
+        target: Target subject type (default: "person").
+        prefer: Preference for subject selection ("largest", "center", etc.).
+        nth: Select nth subject (0-indexed).
+
+    Returns:
+        (x, y) face anchor in absolute pixel coordinates, or None if detection fails.
+    """
+    model = _get_yolo_model()
+    if not model:
+        logger.debug("[subject_detection] YOLO model not available for adaptive face anchor")
+        return None
+
+    try:
+        # Run YOLO detection on full frame to get accurate person bbox
+        results = model.predict(
+            image_rgb,
+            verbose=False,
+            imgsz=640,
+            conf=0.10,  # Low confidence to catch all detections
+            classes=[0],  # person class
+        )
+
+        if len(results) > 0 and results[0].boxes is not None:
+            boxes = results[0].boxes
+            if hasattr(boxes, 'data') and boxes.data is not None and len(boxes.data) > 0:
+                # Get best detection (highest confidence)
+                conf_tensor = boxes.conf
+                if conf_tensor is not None and len(conf_tensor) > 0:
+                    best_idx = int(conf_tensor.argmax())
+                    bbox = boxes.xyxy[best_idx].cpu().numpy()
+
+                    px1, py1, px2, py2 = bbox
+                    person_height = py2 - py1
+                    person_width = px2 - px1
+                    aspect_ratio = person_height / person_width
+
+                    # Adaptive face positioning based on aspect ratio
+                    # Based on measured dimensions:
+                    # Full body: 737 x 1366 (aspect 1.85)
+                    # Half body: 737 x 683 (aspect 0.93)
+                    # Bust: 737 x 341 (aspect 0.46)
+                    if aspect_ratio > 1.4:
+                        # Full body shot
+                        face_pct = 0.12
+                        shot_type = "full body"
+                    elif aspect_ratio > 0.7:
+                        # Half body shot (waist up)
+                        face_pct = 0.25
+                        shot_type = "half body"
+                    else:
+                        # Bust shot (shoulders up)
+                        face_pct = 0.50
+                        shot_type = "bust"
+
+                    face_x = (px1 + px2) / 2
+                    face_y = py1 + person_height * face_pct
+
+                    logger.debug(
+                        f"[subject_detection] Adaptive face anchor: ({int(face_x)}, {int(face_y)}) "
+                        f"for {shot_type} (aspect {aspect_ratio:.2f})"
+                    )
+
+                    return (int(face_x), int(face_y))
+
+        logger.debug("[subject_detection] Adaptive face anchor: No person detected")
+        return None
+
+    except Exception as e:
+        logger.debug(f"[subject_detection] Adaptive face anchor failed: {e}")
+        return None
 
 
 def detect_subject_bbox(

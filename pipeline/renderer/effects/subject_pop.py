@@ -77,22 +77,35 @@ def apply_subject_pop(
                     pass
                 detected_anchor = anchor_point
                 if detected_anchor is None:
+                    # Try adaptive face anchor first
                     sd = import_subject_detection()
-                    detect_anchor = sd.get("detect_anchor_feature")
-                    if callable(detect_anchor):
+                    detect_adaptive = sd.get("detect_adaptive_face_anchor")
+                    if callable(detect_adaptive):
                         try:
                             frame = clip.get_frame(min(0.001, (clip.duration or 0.001) * 0.1))
-                            abs_bbox = (x, y, x + bw, y + bh) if bbox else None
-                            detected_anchor = detect_anchor(frame, subject_mask=mask, subject_bbox=abs_bbox, feature_type=anchor_feature)
-                            if not detected_anchor:
-                                logger.debug(f"[effects] subject_pop YOLO anchor detection returned None - skipping effect")
-                                return clip
+                            detected_anchor = detect_adaptive(frame, target=target, prefer=prefer, nth=nth)
+                            if detected_anchor:
+                                logger.debug(f"[effects] subject_pop using adaptive face anchor at ({detected_anchor[0]}, {detected_anchor[1]})")
                         except Exception as e:
-                            logger.debug(f"[effects] subject_pop anchor detection failed: {e}")
-                            return clip
+                            logger.debug(f"[effects] subject_pop adaptive face anchor failed: {e}")
+
+                    # Fallback to mask-based detection if adaptive anchor failed
                     if detected_anchor is None:
-                        logger.debug(f"[effects] subject_pop no anchor detected - skipping effect")
-                        return clip
+                        detect_anchor = sd.get("detect_anchor_feature")
+                        if callable(detect_anchor):
+                            try:
+                                frame = clip.get_frame(min(0.001, (clip.duration or 0.001) * 0.1))
+                                abs_bbox = (x, y, x + bw, y + bh) if bbox else None
+                                detected_anchor = detect_anchor(frame, subject_mask=mask, subject_bbox=abs_bbox, feature_type=anchor_feature)
+                                if not detected_anchor:
+                                    logger.debug(f"[effects] subject_pop YOLO anchor detection returned None - skipping effect")
+                                    return clip
+                            except Exception as e:
+                                logger.debug(f"[effects] subject_pop anchor detection failed: {e}")
+                                return clip
+                        if detected_anchor is None:
+                            logger.debug(f"[effects] subject_pop no anchor detected - skipping effect")
+                            return clip
                 else:
                     logger.debug(f"[effects] subject_pop using pre-computed anchor at ({detected_anchor[0]}, {detected_anchor[1]})")
 

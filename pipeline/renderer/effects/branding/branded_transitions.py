@@ -25,7 +25,7 @@ CYAN_BRAND = (0, 255, 255)
 
 TransitionType = Literal[
     "leak_1", "leak_2", "neon_green", "dashed_graffiti",
-    "noise_2", "old", "luminance", "purple_wipe", "green_flash"
+    "noise_2", "old", "luminance", "purple_wipe", "green_flash", "zoom_connect"
 ]
 
 
@@ -47,6 +47,7 @@ def apply_branded_transition(
     - luminance: Brightness-based fade
     - purple_wipe: Simple purple color wipe
     - green_flash: Quick neon green flash
+    - zoom_connect: Zoom-in/out transition for connecting clips
 
     :param clip: Input video clip.
     :param transition_type: Type of transition to apply.
@@ -62,6 +63,8 @@ def apply_branded_transition(
         return _apply_purple_wipe(clip, direction, duration, intensity)
     elif transition_type == "green_flash":
         return _apply_green_flash(clip, direction, duration, intensity)
+    elif transition_type == "zoom_connect":
+        return _apply_zoom_connect(clip, direction, duration, intensity)
     elif transition_type in ("leak_1", "leak_2"):
         return _apply_leak_transition(clip, direction, duration, intensity, variant=transition_type)
     elif transition_type == "neon_green":
@@ -459,3 +462,78 @@ def _apply_luminance_transition(
 
     overlay_clip = _VideoClip(make_luminance_frame, duration=clip_dur)
     return CompositeVideoClip([clip, overlay_clip], size=(w, h)).with_duration(clip_dur)
+
+
+def _apply_zoom_connect(
+    clip: _VideoClip,
+    direction: str,
+    duration: float,
+    intensity: float,
+) -> _VideoClip:
+    """Zoom transition that connects clips via zoom-in/zoom-out effect.
+
+    For "out" direction: Zooms into center at end of clip
+    For "in" direction: Zooms out from center at start of clip
+    For "both": Both effects applied
+
+    This creates a visual connection between clips as if the next clip
+    emerges from the zoom point of the previous clip.
+    """
+    from PIL import Image as PILImage
+
+    w, h = clip.size
+    clip_dur = float(clip.duration or 1.0)
+
+    def transform_zoom(get_frame, t):
+        """Apply zoom transformation."""
+        frame = get_frame(t)
+
+        # Determine zoom progress based on direction
+        zoom_progress = 0.0
+
+        if direction == "out":
+            # Zoom in at the end
+            if t > clip_dur - duration:
+                time_in_transition = clip_dur - t
+                zoom_progress = 1.0 - (time_in_transition / duration)
+        elif direction == "in":
+            # Zoom out at the start
+            if t < duration:
+                zoom_progress = 1.0 - (t / duration)
+        else:  # both
+            if t < duration:
+                # Zoom out at start
+                zoom_progress = 1.0 - (t / duration)
+            elif t > clip_dur - duration:
+                # Zoom in at end
+                time_in_transition = clip_dur - t
+                zoom_progress = 1.0 - (time_in_transition / duration)
+
+        if zoom_progress > 0.0:
+            # Apply easing
+            zoom_progress = ease_in_out_cubic(zoom_progress)
+
+            # Calculate zoom scale (1.0 = no zoom, 3.0 = maximum zoom)
+            max_zoom = 1.0 + (2.0 * intensity)
+            zoom_scale = 1.0 + (max_zoom - 1.0) * zoom_progress
+
+            # Convert frame to PIL
+            img = PILImage.fromarray(frame)
+
+            # Calculate zoomed size
+            zoom_w = int(w * zoom_scale)
+            zoom_h = int(h * zoom_scale)
+
+            # Resize image (zoom in)
+            img_zoomed = img.resize((zoom_w, zoom_h), PILImage.Resampling.LANCZOS)
+
+            # Crop from center to get back to original size
+            left = (zoom_w - w) // 2
+            top = (zoom_h - h) // 2
+            img_cropped = img_zoomed.crop((left, top, left + w, top + h))
+
+            return np.array(img_cropped)
+        else:
+            return frame
+
+    return clip.transform(transform_zoom)

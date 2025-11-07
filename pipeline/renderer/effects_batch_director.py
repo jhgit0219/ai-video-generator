@@ -28,7 +28,7 @@ from typing import Any, Dict, List, Optional
 
 from utils.logger import setup_logger
 from config import EFFECTS_LLM_MODEL, EFFECTS_CUSTOM_INSTRUCTIONS
-from prompts import EFFECTS_DIRECTOR_SYSTEM_PROMPT
+from pipeline.prompts import EFFECTS_DIRECTOR_SYSTEM_PROMPT
 
 logger = setup_logger(__name__)
 

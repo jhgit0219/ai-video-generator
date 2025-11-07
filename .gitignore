@@ -22,6 +22,7 @@ ENV/
 # OS files
 .DS_Store
 Thumbs.db
+nul
 
 # Test/coverage
 .pytest_cache/
@@ -30,9 +31,15 @@ htmlcov/
 .tox/
 .mypy_cache/
 custom_test/
+tests/
 *test*.py
 *test*.txt
 *test*.log
+*test*.json
+debug_*.py
+debug_*.png
+debug_*.jpg
+debug_*.jpeg
 
 # Session artifacts and planning documents
 FIX_*.md
@@ -40,10 +47,27 @@ FIXES_*.md
 PLAN_*.md
 IMPLEMENTATION_*.md
 *_PLAN_*.md
+*_SUMMARY*.md
+*_REPORT*.md
+*_COMPLETE*.md
+*_STATUS*.md
+OPTIMIZING_*.md
 Optimizing_*.md
+PROGRESS_*.md
+WORK_*.md
+DAILY_*.md
+TASK_*.md
+FINAL_*.md
+PARALLEL_*.md
+BRANDING_*.md
 context_state.json
 cleanup_*.py
 outline_*.py
+organize_project.py
+fix_segment_15.py
+add_segment15_to_cache.py
+benchmark_parallel_rendering.py
+benchmark_*.txt
 
 # Unused/future features (keep locally, don't commit yet)
 pipeline/checkpoint.py
@@ -84,3 +108,6 @@ weights/
 # Notebooks and checkpoints
 *.ipynb
 .ipynb_checkpoints/
+
+# Development and testing directory (contains all debug/test scripts)
+ignore/

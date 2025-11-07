@@ -13,7 +13,7 @@ from pipeline.ai_filter import rank_images
 from pipeline.ai_filter.clip_ranker import _generate_contextual_labels
 from pipeline.analyzer_agent import ContentAnalyzerAgent
 from config import DIRECTOR_MAX_RETRIES
-from prompts import (
+from pipeline.prompts import (
     DIRECTOR_SYSTEM_PROMPT,
     DIRECTOR_INITIAL_QUERY_TEMPLATE,
     get_director_refine_query_prompt,

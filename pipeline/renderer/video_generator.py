@@ -2,49 +2,51 @@
 Video generator responsible for final assembly and export.
 Creates videos from selected images with automated cinematic effects.
 """
-from typing import List
 import os
 import random
 import traceback
 from pathlib import Path
+from typing import List
+
 import numpy as np
 from PIL import Image
 from moviepy import *
-from utils.logger import setup_logger
-from pipeline.parser import VideoSegment
-from pipeline.renderer.image_enhancer import enhance_image, enhance_images_batch
+
 from config import (
-    IMAGE_SIZE,
-    RENDER_SIZE,
-    FPS,
-    VIDEO_CODEC,
-    AUDIO_CODEC,
-    PRESET,
-    USE_LLM_EFFECTS,
-    USE_MICRO_BATCHING,
-    EFFECTS_BATCH_SIZE,
-    USE_DEEPSEEK_EFFECTS,
-    USE_DEEPSEEK_SELECTIVE,
-    DEEPSEEK_MODEL,
-    DURATION_MODE,
-    FINAL_DURATION_TOLERANCE,
-    DEFAULT_TRANSITION_TYPE,
-    DEFAULT_TRANSITION_DURATION,
     ALLOW_LLM_TRANSITIONS,
+    AUDIO_CODEC,
+    CHUNK_DURATION,
+    DEEPSEEK_MODEL,
+    DEFAULT_TRANSITION_DURATION,
+    DEFAULT_TRANSITION_TYPE,
+    DURATION_MODE,
+    EFFECTS_BATCH_SIZE,
     ENABLE_AI_UPSCALE,
     ENABLE_SIMPLE_SHARPEN,
-    PARALLEL_RENDER_METHOD,
+    FINAL_DURATION_TOLERANCE,
+    FPS,
     FRAME_RENDER_WORKERS,
     FRAME_SEQUENCE_QUALITY,
-    CHUNK_DURATION,
+    IMAGE_SIZE,
+    PARALLEL_RENDER_METHOD,
+    PRESET,
+    RENDER_SIZE,
     USE_CONTENT_AWARE_EFFECTS,
+    USE_DEEPSEEK_EFFECTS,
+    USE_DEEPSEEK_SELECTIVE,
+    USE_LLM_EFFECTS,
+    USE_MICRO_BATCHING,
+    VIDEO_CODEC,
 )
-from pipeline.renderer.effects_director import get_effect_plan, reset_character_tracker
-from pipeline.renderer.effects_batch_director import get_effect_plans_batched
-from pipeline.renderer.deepseek_effects_director import get_custom_effect_code, DeepSeekEffectsDirector
-from pipeline.renderer.effects_tools import TOOLS_REGISTRY
 from pipeline.director_agent import choose_effects_system
+from pipeline.parser import VideoSegment
 from pipeline.renderer.content_aware_effects_director import ContentAwareEffectsDirector
+from pipeline.renderer.deepseek_effects_director import DeepSeekEffectsDirector, get_custom_effect_code
+from pipeline.renderer.effects_batch_director import get_effect_plans_batched
+from pipeline.renderer.effects_director import get_effect_plan, reset_character_tracker, initialize_transition_budget
+from pipeline.renderer.effects_tools import TOOLS_REGISTRY
+from pipeline.renderer.image_enhancer import enhance_images_batch
+from utils.logger import setup_logger
 
 # Try to import iterative effects planner (optional feature)
 try:
@@ -620,6 +622,77 @@ class CinematicEffectsAgent:
         
         return VideoClip(make_frame, duration=duration)
 
+    def _zoom_through_transition(self, clip1: ImageClip, clip2: ImageClip, duration: float) -> VideoClip:
+        """Create a zoom-through transition between two clips.
+
+        Clip1 zooms inward toward center while clip2 zooms outward from center,
+        creating the illusion of passing through one scene into another.
+        """
+        from PIL import Image as PILImage
+
+        w, h = clip1.size
+
+        def make_frame(t):
+            # Normalized progress 0→1
+            progress = min(1.0, t / duration)
+
+            # Smooth easing
+            from pipeline.renderer.effects.easing import ease_in_out_cubic
+            progress_eased = ease_in_out_cubic(progress)
+
+            # Get frames
+            frame1 = clip1.get_frame(min(t, clip1.duration - 0.001))
+            frame2 = clip2.get_frame(0)
+
+            # Resize if needed
+            if frame1.shape[:2] != (h, w):
+                img1 = PILImage.fromarray(frame1.astype('uint8'))
+                img1 = img1.resize((w, h), PILImage.Resampling.LANCZOS)
+                frame1 = np.array(img1)
+            if frame2.shape[:2] != (h, w):
+                img2 = PILImage.fromarray(frame2.astype('uint8'))
+                img2 = img2.resize((w, h), PILImage.Resampling.LANCZOS)
+                frame2 = np.array(img2)
+
+            # Clip A (outgoing): zooms in from 1.0 to 1.6x
+            scale_a = 1.0 + (0.6 * progress_eased)
+            opacity_a = 1.0 - progress_eased
+
+            # Clip B (incoming): zooms out from 0.4x to 1.0
+            scale_b = 0.4 + (0.6 * progress_eased)
+            opacity_b = progress_eased
+
+            # Transform clip A (zoom in)
+            img_a = PILImage.fromarray(frame1)
+            zoom_w_a = int(w * scale_a)
+            zoom_h_a = int(h * scale_a)
+            img_a_zoomed = img_a.resize((zoom_w_a, zoom_h_a), PILImage.Resampling.LANCZOS)
+
+            # Crop from center
+            left_a = (zoom_w_a - w) // 2
+            top_a = (zoom_h_a - h) // 2
+            img_a_cropped = img_a_zoomed.crop((left_a, top_a, left_a + w, top_a + h))
+            frame_a = np.array(img_a_cropped).astype(np.float32)
+
+            # Transform clip B (zoom out)
+            img_b = PILImage.fromarray(frame2)
+            zoom_w_b = int(w * scale_b)
+            zoom_h_b = int(h * scale_b)
+            img_b_zoomed = img_b.resize((zoom_w_b, zoom_h_b), PILImage.Resampling.LANCZOS)
+
+            # Place zoomed clip B in center of frame
+            frame_b_canvas = np.zeros((h, w, 3), dtype=np.float32)
+            left_b = (w - zoom_w_b) // 2
+            top_b = (h - zoom_h_b) // 2
+            frame_b_canvas[top_b:top_b+zoom_h_b, left_b:left_b+zoom_w_b] = np.array(img_b_zoomed).astype(np.float32)
+
+            # Composite with opacity blending
+            result = (frame_a * opacity_a + frame_b_canvas * opacity_b).astype(np.uint8)
+
+            return result
+
+        return VideoClip(make_frame, duration=duration)
+
     # ---------- Static Frame Filters ----------
 
     def _apply_vignette(self, clip: ImageClip) -> ImageClip:
@@ -712,6 +785,9 @@ def render_final_video(segments: List[VideoSegment], audio_file: str, output_nam
     # Reset character introduction tracker for new video
     reset_character_tracker()
 
+    # Initialize transition budget based on number of segments
+    initialize_transition_budget(len(segments))
+
     output_dir = Path("data/output")
     output_dir.mkdir(parents=True, exist_ok=True)
     effects_agent = CinematicEffectsAgent()
@@ -785,7 +861,7 @@ def render_final_video(segments: List[VideoSegment], audio_file: str, output_nam
             # Import subject detection here (only in main process)
             from .subject_detection import detect_subject_bbox, detect_subject_shape
             from PIL import Image as PILImage
-            import numpy as np
+            # numpy already imported at top
 
             for i, seg, plan in segments_needing_detection:
                 try:
@@ -1023,6 +1099,7 @@ def render_final_video(segments: List[VideoSegment], audio_file: str, output_nam
             # Last segment: no transition by default
             if i == len(segments) - 1:
                 t_type, t_dur = "none", 0.0
+
             transitions.append({"type": t_type, "duration": max(0.0, t_dur)})
             video_clips.append(enhanced)
             logger.info(f"   [OK] Segment {i} processed {'LLM plan' if USE_LLM_EFFECTS else 'context-aware'}")
@@ -1036,63 +1113,106 @@ def render_final_video(segments: List[VideoSegment], audio_file: str, output_nam
 
     logger.info(f"[video_generator] Building timeline for {len(video_clips)} clips...")
     
-    # Check if we have crossfade transitions
-    has_crossfades = any((t.get("type") == "crossfade" and t.get("duration", 0) > 0) for t in transitions)
-    
-    if has_crossfades:
-        # Apply crossfades by fading out previous clip and fading in next clip
-        # WITHOUT overlapping (to preserve total duration)
-        logger.info(f"[video_generator] Applying crossfades without reducing total duration")
-        
+    # Check if we have transitions that need special processing
+    has_transitions = any((t.get("type") != "none" and t.get("duration", 0) > 0) for t in transitions)
+
+    if has_transitions:
+        # Process transitions: slides, zooms, and crossfades
+        logger.info(f"[video_generator] Applying transitions between clips")
+
         processed_clips = []
-        
-        for i, clip in enumerate(video_clips):
-            tinfo = transitions[i]
-            t_type = tinfo.get("type", "none")
-            t_dur = float(tinfo.get("duration", 0.0) or 0.0)
-            
-            # Apply fade-out to current clip if next transition is crossfade
-            if i < len(video_clips) - 1:  # Not the last clip
+
+        for i in range(len(video_clips)):
+            clip = video_clips[i]
+
+            # Add the current clip
+            processed_clips.append(clip)
+
+            # Check if there's a transition to the next clip
+            if i < len(video_clips) - 1:
                 next_tinfo = transitions[i + 1] if i + 1 < len(transitions) else {}
                 next_t_type = next_tinfo.get("type", "none")
                 next_t_dur = float(next_tinfo.get("duration", 0.0) or 0.0)
-                
-                if next_t_type == "crossfade" and next_t_dur > 0:
-                    # Fade out at the end of this clip
-                    fade_out_duration = min(next_t_dur, clip.duration)
-                    
-                    def make_fade_out(fade_dur, clip_dur):
-                        def fade_out_transform(get_frame, t):
+
+                if next_t_type != "none" and next_t_dur > 0:
+                    next_clip = video_clips[i + 1]
+
+                    if next_t_type == "crossfade":
+                        # Crossfade: apply fade-out to current clip and fade-in to next clip
+                        # Note: These are applied to the clips themselves, not inserted between
+                        pass  # Handled in a second pass below
+
+                    elif next_t_type in ["slide_left", "slide_right", "slide_up", "slide_down"]:
+                        # Insert slide transition clip between current and next
+                        try:
+                            transition_clip = effects_agent._slide_transition(clip, next_clip, next_t_type, next_t_dur)
+                            processed_clips.append(transition_clip)
+                            logger.info(f"[video_generator] Inserted {next_t_type} transition ({next_t_dur}s) between segment {i} and {i+1}")
+                        except Exception as e:
+                            logger.warning(f"[video_generator] Failed to create {next_t_type} transition: {e}")
+
+                    elif next_t_type == "zoom_connect":
+                        # Insert zoom-through transition clip between current and next
+                        try:
+                            transition_clip = effects_agent._zoom_through_transition(clip, next_clip, next_t_dur)
+                            processed_clips.append(transition_clip)
+                            logger.info(f"[video_generator] Inserted zoom_through transition ({next_t_dur}s) between segment {i} and {i+1}")
+                        except Exception as e:
+                            logger.warning(f"[video_generator] Failed to create zoom_through transition: {e}")
+
+        # Second pass: apply crossfade opacity changes to clips
+        final_clips = []
+        for i, clip in enumerate(processed_clips):
+            # Check if this is a main clip (not a transition clip)
+            # Main clips are at even indices in processed_clips if transitions were inserted
+            # But crossfades don't insert clips, so we need to track separately
+
+            # For now, apply crossfade logic to original clips only
+            if i < len(video_clips):
+                tinfo = transitions[i]
+                t_type = tinfo.get("type", "none")
+                t_dur = float(tinfo.get("duration", 0.0) or 0.0)
+
+                # Apply fade-in if transition TO this clip is crossfade
+                if i > 0 and t_type == "crossfade" and t_dur > 0:
+                    fade_in_duration = min(t_dur, clip.duration)
+
+                    def make_fade_in(fade_dur):
+                        def fade_in_transform(get_frame, t):
                             frame = get_frame(t)
-                            fade_start = clip_dur - fade_dur
-                            if t >= fade_start:
-                                # Fade from 1 to 0
-                                opacity = 1.0 - ((t - fade_start) / fade_dur)
+                            if t < fade_dur:
+                                opacity = t / fade_dur
                                 return (frame * opacity).astype('uint8')
                             return frame
-                        return fade_out_transform
-                    
-                    clip = clip.transform(make_fade_out(fade_out_duration, clip.duration))
-            
-            # Apply fade-in to current clip if its own transition is crossfade
-            if i > 0 and t_type == "crossfade" and t_dur > 0:
-                fade_in_duration = min(t_dur, clip.duration)
-                
-                def make_fade_in(fade_dur):
-                    def fade_in_transform(get_frame, t):
-                        frame = get_frame(t)
-                        if t < fade_dur:
-                            opacity = t / fade_dur  # 0 to 1
-                            return (frame * opacity).astype('uint8')
-                        return frame
-                    return fade_in_transform
-                
-                clip = clip.transform(make_fade_in(fade_in_duration))
-            
-            processed_clips.append(clip)
-        
-        # Concatenate clips sequentially (no overlap, preserves total duration)
-        final_video = concatenate_videoclips(processed_clips, method="chain")
+                        return fade_in_transform
+
+                    clip = clip.transform(make_fade_in(fade_in_duration))
+
+                # Apply fade-out if transition FROM this clip is crossfade
+                if i < len(video_clips) - 1:
+                    next_tinfo = transitions[i + 1] if i + 1 < len(transitions) else {}
+                    next_t_type = next_tinfo.get("type", "none")
+                    next_t_dur = float(next_tinfo.get("duration", 0.0) or 0.0)
+
+                    if next_t_type == "crossfade" and next_t_dur > 0:
+                        fade_out_duration = min(next_t_dur, clip.duration)
+
+                        def make_fade_out(fade_dur, clip_dur):
+                            def fade_out_transform(get_frame, t):
+                                frame = get_frame(t)
+                                fade_start = clip_dur - fade_dur
+                                if t >= fade_start:
+                                    opacity = 1.0 - ((t - fade_start) / fade_dur)
+                                    return (frame * opacity).astype('uint8')
+                                return frame
+                            return fade_out_transform
+
+                        clip = clip.transform(make_fade_out(fade_out_duration, clip.duration))
+
+            final_clips.append(clip)
+
+        # Concatenate all clips and transitions sequentially
+        final_video = concatenate_videoclips(final_clips, method="chain")
         
         logger.info(f"[video_generator] Timeline built: duration={final_video.duration:.3f}s, target={total_json_duration:.3f}s")
     else:
@@ -1252,7 +1372,7 @@ def render_final_video(segments: List[VideoSegment], audio_file: str, output_nam
                 )
         except Exception as e:
             logger.error(f"[video_generator] Parallel rendering failed: {e}, falling back to MoviePy")
-            import traceback
+            # traceback already imported at top
             traceback.print_exc()
             final_video.write_videofile(str(output_path), **write_params)
     else:

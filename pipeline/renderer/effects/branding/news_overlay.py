@@ -3,16 +3,16 @@
 Creates a vintage newspaper-style overlay with aged paper texture,
 green-highlighted text phrases, and classic newspaper layout.
 """
-
 from __future__ import annotations
 
-from typing import Optional, List, Tuple
+from typing import List, Optional, Tuple
+
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont, ImageFilter
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 from moviepy import CompositeVideoClip
 from moviepy.video.VideoClip import VideoClip as _VideoClip
-from utils.logger import setup_logger
 
+from utils.logger import setup_logger
 from ..easing import ease_in_out_cubic
 
 logger = setup_logger(__name__)
@@ -117,19 +117,23 @@ def apply_news_overlay(
         # Add slight grain
         paper = paper.filter(ImageFilter.GaussianBlur(radius=0.5))
 
-        # Add vintage stains (darker spots)
+        # Add vintage stains (darker spots) - use uniform circular radius
         stain_layer = Image.new("RGBA", (width, height), (0, 0, 0, 0))
         stain_draw = ImageDraw.Draw(stain_layer)
+        # Use a radius based on the smaller dimension to keep stains circular
+        min_dim = min(width, height)
         for _ in range(5):
             stain_x = np.random.randint(0, width)
             stain_y = np.random.randint(0, height)
-            stain_r = np.random.randint(20, 60)
+            stain_r = np.random.randint(int(min_dim * 0.05), int(min_dim * 0.15))
             stain_alpha = np.random.randint(10, 30)
             stain_draw.ellipse(
                 [stain_x - stain_r, stain_y - stain_r, stain_x + stain_r, stain_y + stain_r],
                 fill=(139, 90, 43, stain_alpha),
             )
-        stain_layer = stain_layer.filter(ImageFilter.GaussianBlur(radius=15))
+        # Use uniform blur radius
+        blur_radius = max(5, int(min_dim * 0.04))
+        stain_layer = stain_layer.filter(ImageFilter.GaussianBlur(radius=blur_radius))
         paper = Image.alpha_composite(paper, stain_layer)
 
         return paper

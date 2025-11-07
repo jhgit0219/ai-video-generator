@@ -20,6 +20,12 @@ from .overlay_color_grade import (
     apply_cinematic_teal_orange,
 )
 from .branding import (
+    # Atomic effects
+    apply_slime_splatter,
+    apply_full_frame_tint,
+    apply_animated_location_text,
+    apply_subject_glow,
+    # Composite effects
     apply_map_highlight,
     apply_character_highlight,
     apply_news_overlay,
@@ -55,7 +61,13 @@ TOOLS_REGISTRY: Dict[str, Callable[..., VideoClip]] = {
     "desaturated_grade": apply_desaturated_grade,
     "teal_orange_grade": apply_cinematic_teal_orange,
 
-    # Branding Effects
+    # Branding Effects - Atomic
+    "slime_splatter": apply_slime_splatter,
+    "full_frame_tint": apply_full_frame_tint,
+    "animated_location_text": apply_animated_location_text,
+    "subject_glow": apply_subject_glow,
+
+    # Branding Effects - Composite
     "map_highlight": apply_map_highlight,
     "character_highlight": apply_character_highlight,
     "news_overlay": apply_news_overlay,

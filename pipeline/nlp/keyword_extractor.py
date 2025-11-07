@@ -15,7 +15,11 @@ logger = setup_logger(__name__)
 NEWS_INDICATORS = [
     "discover", "found", "reveal", "claim", "announce", "report",
     "new evidence", "breakthrough", "unprecedented", "first time",
-    "researchers", "scientists", "archaeologists", "experts"
+    "researchers", "scientists", "archaeologists", "experts",
+    # Mystery and intrigue indicators
+    "detected", "detect", "impossible", "mystery", "mysterious",
+    "unknown", "strange", "unexplained", "hidden", "secret",
+    "vanish", "disappear", "conspiracy", "cover", "ban", "forbidden"
 ]
 
 # Quote indicators

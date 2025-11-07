@@ -38,7 +38,7 @@ from config import (
     EFFECTS_LLM_MODEL,
     SHARPNESS_WEIGHT,
 )
-from prompts import CLIP_LABEL_GENERATION_TEMPLATE
+from pipeline.prompts import CLIP_LABEL_GENERATION_TEMPLATE
 
 logger = setup_logger(__name__)
 

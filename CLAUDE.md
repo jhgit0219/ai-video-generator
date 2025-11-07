@@ -81,6 +81,84 @@ clip.write_videofile(path, codec="libx264", preset="ultrafast")  # CPU encoder w
 - Full pipeline tests: `python main.py --script data/input/<script>.json`
 - Visual validation required – always check the rendered .mp4 output
 
+## Development Files Organization
+
+**All test scripts, debug scripts, and session artifacts must be placed in the `ignore/` directory.**
+
+The `ignore/` directory is automatically excluded from git tracking. Place the following types of files there:
+
+- Test scripts: `test_*.py`
+- Debug scripts: `debug_*.py`
+- Benchmark outputs: `benchmark_*.txt`
+- Test data files: `*test*.json`, `*test*.txt`
+- Session summaries: `*_SUMMARY*.md`, `*_REPORT*.md`, `WORK_SESSION*.md`, `SESSION_*.md`
+- Planning documents: `PLAN_*.md`, `IMPLEMENTATION_*.md`, `TASK_*.md`
+- Cleanup utilities: `cleanup_*.py`, `organize_project.py`
+- Debug images: `debug_*.png`, `debug_*.jpg`
+
+**Why:** Keeping development/debugging artifacts separate from production code maintains a clean repository and ensures these temporary files are automatically ignored by git.
+
+**Example workflow:**
+```bash
+# Create a test script
+touch ignore/test_new_effect.py
+
+# Run the test
+python ignore/test_new_effect.py
+
+# Debug script automatically ignored - no need to update .gitignore
+```
+
+### Session Continuity
+
+**IMPORTANT for Claude Code agents:** When starting a new session or continuing work:
+
+1. **Check for the most recent session summary in `ignore/`:**
+   ```bash
+   ls -t ignore/SESSION_*.md | head -1
+   ```
+
+2. **Read ONLY the most recent session summary** to understand:
+   - What was completed in the last session
+   - Current git status and staged changes
+   - Next steps and pending work
+   - Important context about recent changes
+
+3. **Do NOT read older session summaries** unless the most recent one explicitly references them or there's a specific reason to check historical context.
+
+4. **Session summaries follow this naming pattern:**
+   - `SESSION_YYYY-MM-DD_brief-description.md`
+   - Example: `SESSION_2025-11-07_adaptive-face-anchor-and-repo-cleanup.md`
+   - Sorted by modification time, most recent first
+
+This ensures continuity between sessions and prevents duplicate work or confusion about the current state.
+
+## Code Reusability (CRITICAL)
+
+**ALWAYS check for existing utilities and effects before writing new code.**
+
+Before implementing any image transformation, resizing, cropping, or effect logic:
+
+1. **Check existing utility functions** in `pipeline/renderer/image_utils.py`:
+   - `resize_and_crop()` - Zoom-to-cover with aspect ratio preservation
+   - `resize_mask()` - Resize masks to match frame dimensions
+   - Other image processing utilities
+
+2. **Check existing effects** in `pipeline/renderer/effects/`:
+   - Zoom effects: `zoom_variable.py`, `zoom_temporal.py`
+   - Subject effects: `subject_outline.py`, `subject_pop.py`
+   - Overlay effects: `overlay_neon.py`, `overlay_text.py`
+   - Branding effects: `branding/` directory
+
+3. **Reuse existing patterns**:
+   - Aspect ratio preservation: Use `max(target_w / img_w, target_h / img_h)` for zoom-to-cover
+   - Transform-based effects: Follow patterns in existing effects
+   - Subject detection: Import from `subject_detection.py` via `subject_import.py`
+
+**Example**: When newspaper_frame needed to resize video to fit cut-out, it reused the existing `resize_and_crop()` function instead of duplicating the zoom-to-cover logic.
+
+**Why this matters**: Code duplication leads to inconsistencies, bugs, and maintenance overhead. Always prefer composition and reuse over duplication.
+
 ## Architecture Overview
 
 The pipeline has 6 conceptual stages:
