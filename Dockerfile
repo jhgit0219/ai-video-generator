@@ -8,9 +8,14 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV CUDA_VISIBLE_DEVICES=0
 
-# Install system dependencies
+# Install system dependencies and Python 3.11
 RUN apt-get update && apt-get install -y \
-    python3.10 \
+    software-properties-common \
+    && add-apt-repository ppa:deadsnakes/ppa \
+    && apt-get update && apt-get install -y \
+    python3.11 \
+    python3.11-venv \
+    python3.11-dev \
     python3-pip \
     git \
     wget \
@@ -22,6 +27,9 @@ RUN apt-get update && apt-get install -y \
     libgomp1 \
     fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
+
+# Set Python 3.11 as default python3
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1
 
 # Install Ollama
 RUN curl -fsSL https://ollama.com/install.sh | sh
