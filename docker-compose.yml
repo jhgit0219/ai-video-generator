@@ -25,6 +25,7 @@ services:
       - ./data/input:/app/data/input
       - ./data/output:/app/data/output
       - ./logs:/app/logs
+      - ./weights:/app/weights  # Use local YOLO weights (avoids re-download)
       - ollama-data:/root/.ollama  # Persist model downloads
       # Development: Mount code for live updates (comment out for production)
       - ./pipeline:/app/pipeline
@@ -62,6 +63,7 @@ services:
       - ./data/input:/app/data/input
       - ./data/output:/app/data/output
       - ./logs:/app/logs
+      - ./weights:/app/weights  # Use local YOLO weights (avoids re-download)
       - ollama-data:/root/.ollama  # Persist model downloads
       # Development: Mount code for live updates (comment out for production)
       - ./pipeline:/app/pipeline
