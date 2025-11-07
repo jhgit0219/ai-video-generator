@@ -30,18 +30,57 @@ if not exist "venv\" (
     python -m venv venv
 )
 
-echo Installing packages...
+echo Installing Python packages...
 call venv\Scripts\activate.bat
 pip install -r requirements.txt
 
 echo.
-echo Creating desktop shortcut...
-powershell -Command "$ws = New-Object -ComObject WScript.Shell; $s = $ws.CreateShortcut('%USERPROFILE%\Desktop\AI Video Generator.lnk'); $s.TargetPath = '%CD%\RUN.bat'; $s.WorkingDirectory = '%CD%'; $s.Save()"
+echo ========================================
+echo Checking Ollama Installation
+echo ========================================
+echo.
+ollama --version >nul 2>&1
+if %errorlevel% neq 0 (
+    echo Ollama not found. Installing...
+    echo.
+    echo Downloading Ollama installer...
+    curl -fsSL https://ollama.com/install.sh -o ollama-install.ps1
+    powershell -ExecutionPolicy Bypass -File ollama-install.ps1
+    del ollama-install.ps1
+) else (
+    echo Ollama is already installed!
+)
+
+echo.
+echo ========================================
+echo Downloading AI Models (This may take 10-20 minutes)
+echo ========================================
+echo.
+echo Starting Ollama service...
+start /B ollama serve >nul 2>&1
+timeout /t 5 /nobreak >nul
+
+echo Downloading llama3 model (~4GB)...
+ollama pull llama3
+
+echo.
+echo Downloading deepseek-coder model (~3.8GB)...
+ollama pull deepseek-coder:6.7b
+
+echo.
+echo ========================================
+echo Creating Desktop Shortcut
+echo ========================================
+powershell -Command "$ws = New-Object -ComObject WScript.Shell; $s = $ws.CreateShortcut('%USERPROFILE%\Desktop\AI Video Generator.lnk'); $s.TargetPath = '%CD%\RUN.bat'; $s.WorkingDirectory = '%CD%'; $s.IconLocation = 'shell32.dll,14'; $s.Save()"
 
 echo.
 echo ========================================
 echo Installation Complete!
 echo ========================================
+echo.
+echo Total download size: ~10GB
+echo  - Python packages: ~2GB
+echo  - AI models: ~8GB
 echo.
 echo A shortcut has been created on your desktop.
 echo Double-click "AI Video Generator" to start.

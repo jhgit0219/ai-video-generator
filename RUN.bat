@@ -19,10 +19,18 @@ echo.
 cd /d "%~dp0"
 call venv\Scripts\activate.bat
 
-REM Set CPU mode
-set CUDA_VISIBLE_DEVICES=-1
-set USE_GPU=false
+REM Check if Ollama is running
+echo Checking Ollama service...
+tasklist /FI "IMAGENAME eq ollama.exe" 2>NUL | find /I /N "ollama.exe">NUL
+if "%ERRORLEVEL%"=="1" (
+    echo Starting Ollama service...
+    start /B ollama serve >nul 2>&1
+    timeout /t 3 /nobreak >nul
+) else (
+    echo Ollama is already running.
+)
 
+echo.
 start http://localhost:7860
 python gradio_interface.py
 
