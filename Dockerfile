@@ -8,15 +8,18 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV CUDA_VISIBLE_DEVICES=0
 
-# Install system dependencies and Python 3.11
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
     software-properties-common \
-    && add-apt-repository ppa:deadsnakes/ppa \
-    && apt-get update && apt-get install -y \
-    python3.11 \
-    python3.11-venv \
-    python3.11-dev \
-    python3-pip \
+    build-essential \
+    libssl-dev \
+    zlib1g-dev \
+    libbz2-dev \
+    libreadline-dev \
+    libsqlite3-dev \
+    libncursesw5-dev \
+    libffi-dev \
+    liblzma-dev \
     git \
     wget \
     curl \
@@ -28,8 +31,19 @@ RUN apt-get update && apt-get install -y \
     fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
-# Set Python 3.11 as default python3
-RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1
+# Install Python 3.11.9 from source
+RUN wget https://www.python.org/ftp/python/3.11.9/Python-3.11.9.tgz \
+    && tar -xzf Python-3.11.9.tgz \
+    && cd Python-3.11.9 \
+    && ./configure --enable-optimizations \
+    && make -j$(nproc) \
+    && make altinstall \
+    && cd .. \
+    && rm -rf Python-3.11.9 Python-3.11.9.tgz
+
+# Set Python 3.11.9 as default python3 and pip3
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/local/bin/python3.11 1 \
+    && update-alternatives --install /usr/bin/pip3 pip3 /usr/local/bin/pip3.11 1
 
 # Install Ollama
 RUN curl -fsSL https://ollama.com/install.sh | sh
