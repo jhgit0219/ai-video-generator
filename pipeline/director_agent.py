@@ -262,13 +262,55 @@ async def llm_initial_query(segment, script_context: str = ""):
     return segment.visual_query
 
 
+def enrich_query_with_agent_data(segment, base_query: str) -> str:
+    """Enrich visual query with Wikipedia/agent analysis data.
+
+    Uses segment analysis agents data to add era, occupation, and style context
+    to improve image search accuracy.
+
+    :param segment: Video segment with agent_analysis attribute.
+    :param base_query: Original visual query.
+    :return: Enriched query with Wikipedia context.
+    """
+    if not hasattr(segment, 'agent_analysis') or not segment.agent_analysis:
+        return base_query
+
+    enrichments = []
+
+    # Add person era/occupation from Wikipedia
+    enriched_persons = segment.agent_analysis.get('enriched_persons', {})
+    for person_name, person_data in enriched_persons.items():
+        era = person_data.get('era', '')
+        occupation = person_data.get('occupation', '')
+
+        if era and era != 'unknown':
+            enrichments.append(era.lower())
+        if occupation and occupation != 'unknown':
+            enrichments.append(occupation.lower())
+
+    # Add visual style suggestions
+    visual_style = segment.agent_analysis.get('visual_style', {})
+    style_type = visual_style.get('visual_style', '')
+    if style_type and 'manuscript' in style_type:
+        enrichments.append('historical manuscript')
+    elif style_type and 'newspaper' in style_type:
+        enrichments.append('vintage newspaper')
+
+    if enrichments:
+        enriched_query = f"{base_query} {' '.join(enrichments[:3])}"  # Limit to 3 enrichments
+        logger.info(f"[director_agent] Enriched query with agent data: '{base_query}' → '{enriched_query}'")
+        return enriched_query
+
+    return base_query
+
+
 async def llm_refine_query(segment, top3, contextual_labels=None):
     """
     Suggests a better visual search query using the local LLM (Ollama).
     Activated when no images pass the CLIP text relevance filter.
     Refines the CURRENT query (which may already be refined from previous attempts).
     Uses the base query as context to prevent drift from original intent.
-    
+
     Args:
         segment: The video segment to refine query for
         top3: Top 3 ranked images with their CLIP captions
@@ -276,6 +318,9 @@ async def llm_refine_query(segment, top3, contextual_labels=None):
     """
     current_query = getattr(segment, 'visual_query', '')
     base_query = getattr(segment, 'base_visual_query', current_query)  # Fallback to current if no base stored
+
+    # ENHANCEMENT: Enrich query with segment analysis agent data (Wikipedia, visual style)
+    enriched_base = enrich_query_with_agent_data(segment, base_query)
     
     # Extract CLIP captions from top3 images
     top3_captions = []
@@ -322,12 +367,26 @@ async def llm_refine_query(segment, top3, contextual_labels=None):
     # This prevents Ollama context overwhelm that can cause bad refinements
     from pipeline.prompts import get_director_refine_query_prompt_retry
 
+    # Add agent analysis context to prompt if available
+    agent_context = ""
+    if hasattr(segment, 'agent_analysis') and segment.agent_analysis:
+        enriched_persons = segment.agent_analysis.get('enriched_persons', {})
+        if enriched_persons:
+            agent_hints = []
+            for person_name, data in enriched_persons.items():
+                era = data.get('era', '')
+                occupation = data.get('occupation', '')
+                if era != 'unknown' and occupation != 'unknown':
+                    agent_hints.append(f"{era} {occupation}")
+            if agent_hints:
+                agent_context = f"\n\nContext from research: {', '.join(agent_hints)}\nUse this to refine imagery type."
+
     user_prompt = get_director_refine_query_prompt_retry(
-        visual_query=current_query,
+        visual_query=enriched_base,  # Use enriched base query instead of current
         transcript=getattr(segment, 'transcript', '')[:200],  # Truncate to 200 chars for token efficiency
         required_subjects=required_subjects,  # Pass as list, not string
         scores=scores_text
-    ) + label_context
+    ) + label_context + agent_context
 
     logger.debug(f"[director_agent] Using condensed retry prompt (~500 tokens vs ~2500 full prompt)")
 

@@ -26,17 +26,26 @@ from config import INPUT_DIR, TEMP_IMAGES_DIR, OUTPUT_DIR, SKIP_FLAG
 
 logger = setup_logger(__name__)
 
-async def async_generate_video(input_json_path: str, audio_file: str) -> Optional[str]:
+async def async_generate_video(
+    input_json_path: str,
+    audio_file: str,
+    progress_callback: Optional[callable] = None
+) -> Optional[str]:
     """
     Async video generation pipeline to support async scraping.
-    
+
     Args:
         input_json_path: Path to input JSON script
         audio_file: Path to audio file
-    
+        progress_callback: Optional callback for progress updates (stage_name, percent)
+
     Returns:
         Path to generated video or None if failed
     """
+    def update_progress(stage: str, percent: float):
+        """Update progress if callback provided."""
+        if progress_callback:
+            progress_callback(stage, percent)
     try:
         # Initialize all required directories on startup
         initialize_required_directories()
@@ -56,6 +65,7 @@ async def async_generate_video(input_json_path: str, audio_file: str) -> Optiona
         ensure_directory(story_temp_dir)
 
         logger.info("Starting video generation pipeline")
+        update_progress("Parsing script", 0.05)
 
         # 1. Parse input
         segments, script_data = parse_input(input_json_path)
@@ -121,6 +131,7 @@ async def async_generate_video(input_json_path: str, audio_file: str) -> Optiona
         
         if not should_skip:
             # 1. Analyze content genre and extract required subjects (ASYNC)
+            update_progress("Analyzing content", 0.10)
             logger.info("Analyzing content with ContentAnalyzer agent...")
             segments = await analyze_content(segments, script_data)
 
@@ -139,6 +150,7 @@ async def async_generate_video(input_json_path: str, audio_file: str) -> Optiona
             })
 
             # 2. Refine initial queries with cinematic director (ASYNC)
+            update_progress("Refining visual queries", 0.15)
             logger.info("Refining initial queries with cinematic director...")
             original_queries = [seg.visual_query for seg in segments]
             segments = await refine_initial_queries(segments, script_context)
@@ -155,6 +167,7 @@ async def async_generate_video(input_json_path: str, audio_file: str) -> Optiona
             })
 
             # 2. Scrape images (ASYNC)
+            update_progress(f"Scraping images for {len(segments)} segments", 0.25)
             logger.info("Collecting images asynchronously...")
             segments = await collect_images_for_segments(segments, temp_dir=story_temp_dir)
 
@@ -173,6 +186,7 @@ async def async_generate_video(input_json_path: str, audio_file: str) -> Optiona
                 })
 
             # 3. Rank and select best images (SYNC)
+            update_progress("Ranking images with CLIP AI", 0.45)
             logger.info("Ranking images with CLIP...")
             segments = rank_images(segments, temp_dir=story_temp_dir)
 
@@ -193,6 +207,7 @@ async def async_generate_video(input_json_path: str, audio_file: str) -> Optiona
                 })
 
             # 3.5. Director Agent supervision (ASYNC)
+            update_progress("Running Director Agent supervision", 0.55)
             logger.info("Starting Director Agent supervision...")
             segments = await supervise_segments(segments, temp_dir=story_temp_dir)
 
@@ -226,6 +241,7 @@ async def async_generate_video(input_json_path: str, audio_file: str) -> Optiona
             })
 
         # 4. Apply post-processing effects (SYNC)
+        update_progress("Applying visual effects", 0.65)
         segments = apply_effects(segments, audio_file)
 
         # Log effects application
@@ -242,6 +258,7 @@ async def async_generate_video(input_json_path: str, audio_file: str) -> Optiona
         })
 
         # 5. Add subtitle overlays (SYNC)
+        update_progress("Overlaying subtitles", 0.75)
         segments = overlay_subtitles(segments, audio_file)
 
         # Log subtitle overlay
@@ -257,9 +274,12 @@ async def async_generate_video(input_json_path: str, audio_file: str) -> Optiona
         })
 
         # 6. Render final video (SYNC)
+        update_progress("Rendering final video", 0.80)
         # Extract output name from input JSON filename
         output_name = Path(input_json_path).stem  # e.g., "mia_story" or "lost_labyrinth_script"
         output_path = render_final_video(segments, audio_file, output_name=output_name)
+
+        update_progress("Finalizing", 0.95)
 
         # Log rendering
         session.log_stage("rendering", {
@@ -301,7 +321,7 @@ def generate_video(input_json_path: str, audio_file: str) -> Optional[str]:
     """
     Sync wrapper around async pipeline for convenience.
     """
-    return asyncio.run(async_generate_video(input_json_path, audio_file))
+    return asyncio.run(async_generate_video(input_json_path, audio_file, None))
 
 
 def full_pipeline(
@@ -322,17 +342,8 @@ def full_pipeline(
     """
     import shutil
 
-    def update_progress(stage: str, percent: float):
-        """Update progress if callback provided."""
-        if progress_callback:
-            progress_callback(stage, percent)
-
-    update_progress("Initializing", 0.05)
-
     # Run async pipeline (generates to default output location)
-    result = asyncio.run(async_generate_video(script_path, audio_path))
-
-    update_progress("Complete", 0.95)
+    result = asyncio.run(async_generate_video(script_path, audio_path, progress_callback))
 
     if result:
         # Move the generated video to the requested output path
@@ -344,7 +355,8 @@ def full_pipeline(
             target_path.parent.mkdir(parents=True, exist_ok=True)
             # Move the file
             shutil.move(str(result_path), str(target_path))
-            update_progress("Complete", 1.0)
+            if progress_callback:
+                progress_callback("Complete", 1.0)
             return str(target_path)
 
     return None

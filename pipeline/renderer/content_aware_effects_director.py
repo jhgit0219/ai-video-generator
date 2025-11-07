@@ -7,10 +7,12 @@ character_highlight) without manual configuration.
 
 from typing import List, Dict, Any, Optional
 import re
+import asyncio
 from pipeline.parser import VideoSegment
 from pipeline.nlp.entity_extractor import EntityExtractor
 from pipeline.nlp.character_inference import CharacterInferenceEngine
 from pipeline.nlp.keyword_extractor import KeywordExtractor
+from pipeline.nlp.segment_analysis_agents import SegmentAnalysisOrchestrator
 from utils.logger import setup_logger
 
 logger = setup_logger(__name__)
@@ -24,12 +26,21 @@ class ContentAwareEffectsDirector:
     locations, character_highlight for persons).
     """
 
-    def __init__(self):
-        """Initialize content-aware effects director."""
+    def __init__(self, enable_agents: bool = True):
+        """Initialize content-aware effects director.
+
+        :param enable_agents: Enable external API-based analysis agents (Wikipedia, etc.).
+        """
         self.entity_extractor = EntityExtractor()
         self.character_inference = CharacterInferenceEngine()
         self.keyword_extractor = KeywordExtractor()
-        logger.info("[content_aware_effects] Initialized with NER, inference, and keyword extraction")
+        self.enable_agents = enable_agents
+        self.segment_orchestrator = SegmentAnalysisOrchestrator() if enable_agents else None
+
+        if enable_agents:
+            logger.info("[content_aware_effects] Initialized with NER, inference, keyword extraction, and analysis agents")
+        else:
+            logger.info("[content_aware_effects] Initialized with NER, inference, and keyword extraction (agents disabled)")
 
     def analyze_segments(self, segments: List[VideoSegment]) -> None:
         """Analyze segments for entity mentions and mark first occurrences.
@@ -78,6 +89,33 @@ class ContentAwareEffectsDirector:
                     segment.first_mentioned_person = first_person
                     logger.info(f"[content_aware_effects] Segment {idx}: "
                                f"First mention of person '{first_person}'")
+
+            # Run external agent analysis if enabled
+            if self.enable_agents and self.segment_orchestrator:
+                try:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    agent_analysis = loop.run_until_complete(
+                        self.segment_orchestrator.analyze_segment(
+                            segment.transcript,
+                            entities
+                        )
+                    )
+                    loop.close()
+
+                    # Store agent analysis results on segment
+                    segment.agent_analysis = agent_analysis
+
+                    # Extract significance scores for decision making
+                    if "enriched_persons" in agent_analysis:
+                        for person_name, person_data in agent_analysis["enriched_persons"].items():
+                            significance = person_data.get("significance_score", 0)
+                            logger.info(f"[content_aware_effects] Segment {idx}: Wikipedia analysis for '{person_name}': "
+                                       f"significance={significance}, era={person_data.get('era', 'unknown')}")
+
+                except Exception as e:
+                    logger.warning(f"[content_aware_effects] Segment {idx}: Agent analysis failed: {e}")
+                    segment.agent_analysis = {}
 
     def modify_visual_query_for_location(self, segment: VideoSegment) -> str:
         """Modify visual query to scrape 3D globe/map for location segments.
@@ -157,12 +195,29 @@ class ContentAwareEffectsDirector:
                 # Extract enhanced description for headline/body text
                 enhanced_desc = segment.detected_persons_enhanced[0] if segment.detected_persons_enhanced else person_name
 
+                # Use Wikipedia data if available from agent analysis
+                body_text = segment.transcript[:200] + "..." if len(segment.transcript) > 200 else segment.transcript
+
+                if hasattr(segment, "agent_analysis") and segment.agent_analysis:
+                    enriched = segment.agent_analysis.get("enriched_persons", {}).get(person_name, {})
+                    if enriched and "wikipedia_extract" in enriched:
+                        # Use Wikipedia extract as body text for more authoritative content
+                        wiki_extract = enriched["wikipedia_extract"]
+                        body_text = wiki_extract if wiki_extract else body_text
+
+                        # Enhance subheadline with era and occupation from Wikipedia
+                        occupation = enriched.get("occupation", "")
+                        era = enriched.get("era", "")
+                        if occupation != "unknown" and era != "unknown":
+                            enhanced_desc = f"{era} {occupation} {person_name}"
+                            logger.debug(f"[content_aware_effects] Enhanced subheadline from Wikipedia: '{enhanced_desc}'")
+
                 newspaper_tool = {
                     "name": "newspaper_frame",
                     "params": {
                         "headline": person_upper,
                         "subheadline": enhanced_desc,
-                        "body_text": segment.transcript[:200] + "..." if len(segment.transcript) > 200 else segment.transcript,
+                        "body_text": body_text,
                         "cutout_width_ratio": 0.6,
                         "cutout_height_ratio": 0.6,
                         "zoom_to_fullscreen": True,

@@ -2,6 +2,118 @@
 
 An AI-powered video generation pipeline that transforms text scripts into cinematic videos with automated visual effects, subject detection, and intelligent image selection.
 
+---
+
+## 🚀 Quick Start for Users
+
+### One-Click Setup (Windows)
+
+1. **Clone the repository:**
+   ```bash
+   git clone <repository-url>
+   cd ai-video-generator
+   ```
+
+2. **Run the installer:**
+   ```bash
+   INSTALL.bat
+   ```
+   This will:
+   - Create a Python virtual environment
+   - Install all dependencies
+   - Download Ollama and AI models (llama3, deepseek-coder)
+   - Create a desktop shortcut
+
+3. **Launch the web interface:**
+   ```bash
+   RUN.bat
+   ```
+   Or double-click the desktop shortcut created during installation.
+
+4. **Open your browser** at: http://localhost:7860
+   - Paste your script text or upload a JSON file
+   - (Optional) Upload an audio file
+   - Click "Generate Video"
+   - Download your completed video!
+
+### Setup (Mac/Linux)
+
+1. **Clone the repository:**
+   ```bash
+   git clone <repository-url>
+   cd ai-video-generator
+   ```
+
+2. **Create virtual environment and install dependencies:**
+   ```bash
+   python3.11 -m venv venv
+   source venv/bin/activate
+   pip install -r requirements.txt
+   python -m spacy download en_core_web_sm
+   ```
+
+3. **Install Ollama (optional, for LLM effects):**
+   ```bash
+   # Download from: https://ollama.com/download
+   ollama pull llama3
+   ollama pull deepseek-coder:6.7b
+   ```
+
+4. **Create .env file:**
+   ```bash
+   cp .env.example .env
+   # Edit .env and set USE_PROXIES=False
+   ```
+
+5. **Launch the web interface:**
+   ```bash
+   source venv/bin/activate
+   python gradio_interface.py
+   ```
+
+6. **Open your browser** at: http://localhost:7860
+
+### Manual Setup (Advanced)
+
+If you prefer manual setup or encounter issues with the web interface:
+
+1. **Place your files in `data/input/`:**
+   - `my_script.json` (your video script)
+   - `my_script.mp3` (your narration audio - must match script name)
+
+2. **Run the generator:**
+   ```bash
+   # Windows
+   .\venv\Scripts\python.exe main.py my_script
+
+   # Mac/Linux
+   ./venv/bin/python3 main.py my_script
+   ```
+
+3. **Find your video** in `data/output/my_script.mp4`
+
+### Command-Line Options
+
+```bash
+# Auto-detect matching audio file (my_story.json + my_story.mp3)
+python main.py my_story
+
+# Specify audio file explicitly (different name)
+python main.py my_story custom_audio
+
+# Clear LLM cache before generating (prevents cross-story contamination)
+python main.py my_story --clear-cache
+```
+
+**File Naming Rules:**
+- If you only provide the script name: `python main.py my_story`
+  - Looks for `my_story.json` and `my_story.mp3` with matching names
+- If you provide both: `python main.py my_story custom_audio`
+  - Uses `my_story.json` with `custom_audio.mp3`
+- Extensions (.json, .mp3) are optional in commands
+
+---
+
 ## 🎯 Overview
 
 This tool automates professional video creation by:
@@ -38,7 +150,9 @@ This tool automates professional video creation by:
 - **CAPTCHA Handling**: Manual, retry, or skip strategies for web scraping
 - **Effect Director**: LLM suggests optimal effects per segment based on content
 
-## 🚀 Quick Start
+## 🛠️ Advanced Installation (Developers)
+
+For developers who want manual control over the installation:
 
 ### Prerequisites
 
@@ -47,7 +161,7 @@ This tool automates professional video creation by:
 - CUDA-compatible GPU (optional, but recommended)
 - Ollama (optional, for LLM-driven effects)
 
-### Installation
+### Manual Installation
 
 1. **Clone and setup virtual environment:**
 
@@ -66,8 +180,8 @@ source venv/bin/activate
 2. **Install PyTorch with CUDA support:**
 
 ```bash
-# For CUDA 12.1+:
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+# For CUDA 12.8+:
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
 
 # For CPU only:
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
@@ -77,41 +191,37 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 
 ```bash
 pip install -r requirements.txt
+python -m spacy download en_core_web_sm
 ```
 
-4. **Configure the application:**
+4. **Configure the application (optional):**
 
 ```bash
-# Copy example config
-cp config.example.py config.py
-
 # Create .env for proxy credentials (if using proxies)
-echo "PROXY_USERNAME=your-username" > .env
+echo "USE_PROXIES=False" > .env
+echo "PROXY_USERNAME=your-username" >> .env
 echo "PROXY_PASSWORD=your-password" >> .env
 echo "PROXY_HOST=your-proxy-host" >> .env
 echo "PROXY_PORT=80" >> .env
-echo "USE_PROXIES=False" >> .env  # Set to True if using proxies
 ```
 
-5. **Download AI models (optional):**
+5. **Install Ollama (optional, for LLM effects):**
 
 ```bash
-# Real-ESRGAN 4x upscaling model (64MB)
-# Download from: https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth
-# Place in: weights/RealESRGAN_x4plus.pth
-
-# YOLO segmentation model (auto-downloads on first run)
-# Will be saved to: weights/yolo11x-seg.pt
+# Download from: https://ollama.com/download
+# Then pull models:
+ollama pull llama3
+ollama pull deepseek-coder:6.7b
 ```
 
-### First Video
+## 📖 Script Format
 
-1. **Create a script** in `data/input/my_story.json`:
+Your JSON script should follow this structure:
 
 ```json
 {
   "audio_file": "my_audio.mp3",
-  "total_duration": 10.0,
+  "total_duration": 15.5,
   "segments": [
     {
       "start_time": 0.0,
@@ -119,7 +229,10 @@ echo "USE_PROXIES=False" >> .env  # Set to True if using proxies
       "duration": 5.0,
       "transcript": "A young explorer discovers ancient secrets.",
       "visual_query": "young explorer ancient ruins adventure",
-      "visual_description": "Portrait of a young adventurer in front of ancient ruins"
+      "visual_description": "Portrait of a young adventurer in front of ancient ruins",
+      "topic": "Setting and introduction",
+      "content_type": "narrative_hook",
+      "reasoning": "Opening scene to establish character and setting"
     },
     {
       "start_time": 5.0,
@@ -133,57 +246,17 @@ echo "USE_PROXIES=False" >> .env  # Set to True if using proxies
 }
 ```
 
-2. **Place audio file** at `data/input/my_audio.mp3`
+**Required Fields:**
+- `audio_file`: Audio filename (must be in `data/input/`)
+- `total_duration`: Total video duration in seconds
+- `segments`: Array of video segments with:
+  - `start_time`, `end_time`, `duration`: Timing information
+  - `transcript`: Narration text
+  - `visual_query`: Search query for images
+  - `visual_description`: Desired visual composition
 
-3. **Generate video:**
-
-```bash
-python main.py my_story
-```
-
-4. **Find output** at `data/output/my_story.mp4`
-
-## 📖 Usage
-
-### Command Line
-
-```bash
-# Basic usage
-python main.py <script_name>
-
-# Clear cache before generating
-python main.py my_story --clear-cache
-
-# Test effects in isolation
-python test_effects.py --image-dir data/test_webp_input \
-                       --duration 6 \
-                       --output data/output/test.mp4 \
-                       --tools-file tools_herodotus_panel.json
-```
-
-### Script Format
-
-Required fields in your JSON script:
-
-```json
-{
-  "audio_file": "audio.mp3", // Audio filename (in data/input/)
-  "total_duration": 15.5, // Total video duration in seconds
-  "segments": [
-    {
-      "start_time": 0.0, // Segment start (seconds)
-      "end_time": 5.0, // Segment end (seconds)
-      "duration": 5.0, // Segment duration (seconds)
-      "transcript": "...", // Narration text
-      "visual_query": "...", // Image search query
-      "visual_description": "...", // Desired visual composition
-      "topic": "...", // Optional: segment topic
-      "content_type": "...", // Optional: narrative_hook, event, etc.
-      "reasoning": "..." // Optional: creative direction notes
-    }
-  ]
-}
-```
+**Optional Fields:**
+- `topic`, `content_type`, `reasoning`: Metadata for LLM effects planning
 
 ### Tools Configuration
 
@@ -523,291 +596,4 @@ MIT License
 - [OpenAI CLIP](https://github.com/openai/CLIP) - Semantic ranking
 - [Real-ESRGAN](https://github.com/xinntao/Real-ESRGAN) - AI upscaling
 - [Ollama](https://ollama.ai/) - Local LLM inference
-
-Create a JSON script file in `data/input/` with the following structure:
-
-```json
-{
-  "audio_file": "your_audio_file.mp3",
-  "total_duration": 13.692,
-  "generation_method": "narrative pacing with visual-emotional pairing",
-  "analysis_date": "2025-10-29",
-
-  "segments": [
-    {
-      "start_time": 0.0,
-      "end_time": 4.092,
-      "duration": 4.092,
-      "transcript": "In a quiet village where the sky brushes the fields in hues of gold,",
-      "topic": "Setting and tone establishment",
-      "content_type": "narrative_hook",
-      "visual_query": "golden sunset village countryside fields cinematic",
-      "visual_description": "Warm aerial shot of a village at sunset, golden fields swaying under soft light",
-      "reasoning": "4.1s - Opening imagery designed for slow, gentle introduction; emphasis on warmth and tranquility"
-    },
-    {
-      "start_time": 4.093,
-      "end_time": 7.702,
-      "duration": 3.609,
-      "transcript": "young Mia discovered a map leading to forgotten treasures.",
-      "topic": "Inciting discovery",
-      "content_type": "narrative_event",
-      "visual_query": "child holding old map candlelight treasure adventure",
-      "visual_description": "Close-up of a child's hands unfolding an aged treasure map under candlelight",
-      "reasoning": "3.6s - Quick transition to establish action; tighter pacing to move from calm setup to curiosity"
-    }
-  ],
-
-  "summary": {
-    "total_segments": 2,
-    "average_duration": 3.9,
-    "min_duration": 2.3,
-    "max_duration": 4.1,
-    "segments_under_4s": 1,
-    "segments_4s_or_over": 1,
-    "topic_shifts_detected": 2,
-    "engagement_notes": "Short-form pacing with clear visual motifs and narrative beats."
-  }
-}
-```
-
-**Required Fields:**
-
-- `audio_file`: Name of the audio file (must be in `data/input/` directory)
-- `segments`: Array of video segments with:
-  - `start_time`, `end_time`, `duration`: Timing information
-  - `transcript`: Narration text for this segment
-  - `visual_query`: Search query for finding relevant images
-  - `visual_description`: Description of the desired visual
-  - Additional metadata: `topic`, `content_type`, `reasoning`
-
-### Running the Generator
-
-Place your files in `data/input/`:
-
-- JSON script file (e.g., `mia_story.json`)
-- Audio file referenced in the JSON (e.g., `your_audio.mp3`)
-
-Run the generator with:
-
-```bash
-# Generate video from a specific script
-python main.py mia_story
-
-# Or specify both script and audio explicitly
-python main.py mia_story your_audio
-```
-
-The script name should match your JSON file (without `.json` extension).
-The audio file should match the `audio_file` field in your JSON.
-
-### Output
-
-Generated videos will be saved to `data/output/` with the naming format:
-`{script_name}.mp4`
-
-Example: `mia_story.mp4`
-
-### Pipeline Stages
-
-1. **Parser** (`pipeline/parser.py`)
-
-   - Reads input JSON
-   - Creates video segment objects
-   - Validates durations and timing
-
-2. **Scraper** (`pipeline/scraper.py`)
-
-   - Downloads candidate images for each segment
-   - Filters by aspect ratio and quality
-   - Stores in temp directory
-
-3. **AI Filter** (`pipeline/ai_filter.py`)
-
-   - Uses CLIP to rank images
-   - Matches images to text content
-   - Selects best-fitting images
-
-4. **Post-processing** (`pipeline/postprocessing.py`)
-
-   - Applies Ken Burns effect
-   - Adds transitions
-   - Applies visual enhancements
-
-5. **Text Overlay** (`pipeline/text_overlay.py`)
-
-   - Generates subtitles from audio
-   - Applies stylized text overlays
-   - Synchronizes with audio
-
-6. **Renderer** (`pipeline/renderer.py`)
-   - Concatenates segments
-   - Adds audio track
-   - Exports final video
-
-## Agent-controllable Effect Tools
-
-You can instruct the pipeline to apply parametric effects per segment, either via the LLM effects plan (`plan.tools`) or programmatically by setting `segment.custom_effects`.
-
-Available tools (in `pipeline/renderer/effects_tools.py`):
-
-- `neon_overlay(color=(57,255,20), opacity=0.18)`
-
-  - Adds a neon color wash over the frame
-
-- `subject_pop(bbox, scale=1.15, pop_duration=0.4, shadow_opacity=0.35)`
-
-  - Crops the subject box and animates a bounce-in “pop” with optional shadow
-  - `bbox` is normalized (x, y, w, h) in [0,1]
-
-- `zoom_on_subject(bbox, target_scale=1.5, speed_curve='easeInOut')`
-
-  - Variable-speed zoom toward subject center while keeping it centered
-
-- `paneled_text(text, bbox=None, side='right', panel_color=(0,0,0), panel_opacity=0.6, border_color=(57,255,20), fontsize=48)`
-
-  - Renders a caption panel near the subject with a neon border
-
-- `zoom_then_panel(text, bbox=None, zoom_duration=3.0, zoom_scale=1.5, panel_side='right', typing_speed=12, ...)`
-  - Combines temporal zoom with delayed panel text overlay
-  - Zooms into subject over specified duration, then displays panel with typewriter effect
-  - Panel is fixed to video frame (unaffected by zoom)
-  - Highly customizable with 20+ parameters for zoom and panel appearance
-
-Usage (programmatic):
-
-```python
-# For a given segment, define custom effects (applied after motion effects)
-segment.custom_effects = [
-  {"name": "neon_overlay", "params": {"opacity": 0.22}},
-  {"name": "zoom_on_subject", "params": {"bbox": (0.35, 0.2, 0.25, 0.45), "target_scale": 1.6}},
-  {"name": "subject_pop", "params": {"bbox": (0.35, 0.2, 0.25, 0.45), "scale": 1.2, "pop_duration": 0.3}},
-  {"name": "paneled_text", "params": {"text": "Herodotus, c. 484–425 BC", "bbox": (0.35,0.2,0.25,0.45), "side": "right"}},
-  {"name": "zoom_then_panel", "params": {
-    "text": "Marcus Aurelius",
-    "bbox": (0.3, 0.15, 0.4, 0.6),
-    "zoom_duration": 3.0,
-    "zoom_scale": 1.5,
-    "panel_side": "right",
-    "border_color": (255, 215, 0),
-    "typing_speed": 15
-  }}
-]
-```
-
-Usage (from LLM plan):
-
-```json
-{
-  "motion": "ken_burns_in",
-  "overlays": ["neon_overlay"],
-  "tools": [
-    {
-      "name": "zoom_on_subject",
-      "params": { "bbox": [0.35, 0.2, 0.25, 0.45], "target_scale": 1.6 }
-    },
-    {
-      "name": "paneled_text",
-      "params": {
-        "text": "Herodotus",
-        "bbox": [0.35, 0.2, 0.25, 0.45],
-        "side": "left"
-      }
-    }
-  ]
-}
-```
-
-## Configuration
-
-Edit `config.py` to customize:
-
-- Image/video quality settings
-- AI model parameters
-- Post-processing effects
-- Output formats
-
-Key settings:
-
-```python
-# Video settings
-FPS = 30
-VIDEO_CODEC = "libx264"
-VIDEO_BITRATE = "4000k"
-
-# Image settings
-IMAGE_SIZE = (1920, 1080)
-IMAGE_QUALITY = 95
-
-# Effects
-TRANSITION_DURATION = 1.0
-DEFAULT_ZOOM_FACTOR = 1.1
-```
-
-## Directory Structure
-
-```
-ai_video_generator/
-├── main.py              # Main orchestration
-├── config.py            # Configuration settings
-├── requirements.txt     # Dependencies
-├── utils/
-│   ├── logger.py       # Logging utilities
-│   └── helpers.py      # Helper functions
-├── pipeline/
-│   ├── parser.py       # Input parsing
-│   ├── scraper.py      # Image scraping
-│   ├── ai_filter.py    # CLIP-based filtering
-│   ├── postprocessing.py # Visual effects
-│   ├── text_overlay.py  # Subtitle generation
-│   └── renderer.py     # Final assembly
-└── data/
-    ├── input/          # Input files
-    ├── temp_images/    # Temporary files
-    └── output/         # Generated videos
-```
-
-## Logging
-
-Logs are written to `video_generator.log` with detailed information about each stage of the pipeline. Set log level in `config.py`:
-
-```python
-LOG_LEVEL = "INFO"  # or "DEBUG" for more details
-```
-
-## Error Handling
-
-The pipeline includes comprehensive error handling:
-
-- Input validation
-- Resource availability checks
-- Process monitoring
-- Cleanup of temporary files
-
-## GPU Acceleration
-
-The pipeline automatically uses CUDA if available:
-
-- CLIP model inference
-- Image processing
-- Video encoding
-
-## Future Enhancements
-
-Planned features:
-
-- [ ] Multiple aspect ratio support
-- [ ] Custom effect templates
-- [ ] Batch processing
-- [ ] Web UI for configuration
-- [ ] Cloud storage integration
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Submit a pull request
-
-## License
-
-[MIT License](LICENSE)
+- [Gradio](https://gradio.app/) - Web interface framework
