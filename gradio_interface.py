@@ -71,6 +71,7 @@ def parse_script_input(
 def generate_video(
     text_input: str,
     json_file: Optional[gr.File],
+    audio_file: Optional[gr.File],
     resolution: str,
     fps: int,
     use_llm: bool,
@@ -82,6 +83,7 @@ def generate_video(
 
     :param text_input: Raw text script input.
     :param json_file: Uploaded JSON file (if provided).
+    :param audio_file: Uploaded audio file (optional).
     :param resolution: Output resolution (e.g., "1920x1080").
     :param fps: Frames per second.
     :param use_llm: Enable LLM-based effects planning.
@@ -130,8 +132,9 @@ def generate_video(
         # Generate output filename
         progress(0.2, desc="Starting video generation...")
         output_filename = f"generated_{Path(script_path).stem}.mp4"
-        output_path = Path("data/output") / output_filename
-        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_dir = Path("data/output")
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = output_dir / output_filename
 
         # Run pipeline with progress updates
         logger.info(f"[gradio] Starting video generation: {output_path}")
@@ -142,12 +145,19 @@ def generate_video(
             progress(0.2 + (percent * 0.7), desc=f"{stage}...")
 
         # Run full pipeline
-        full_pipeline(
-            script_path=script_path,
-            output_path=str(output_path),
-            enable_agents=enable_agents,
-            progress_callback=progress_callback
-        )
+        pipeline_kwargs = {
+            'script_path': script_path,
+            'output_path': str(output_path),
+            'enable_agents': enable_agents,
+            'progress_callback': progress_callback
+        }
+
+        # Add audio file if provided
+        if audio_file is not None:
+            pipeline_kwargs['audio_path'] = audio_file
+            logger.info(f"[gradio] Using audio file: {audio_file}")
+
+        full_pipeline(**pipeline_kwargs)
 
         # Restore original settings
         progress(0.95, desc="Finalizing...")
@@ -219,6 +229,12 @@ def create_interface() -> gr.Blocks:
                 json_file = gr.File(
                     label="Or Upload JSON Script",
                     file_types=['.json'],
+                    type='filepath'
+                )
+
+                audio_file = gr.File(
+                    label="Audio File (Optional)",
+                    file_types=['.mp3', '.wav', '.m4a', '.aac', '.flac'],
                     type='filepath'
                 )
 
@@ -329,6 +345,7 @@ def create_interface() -> gr.Blocks:
             inputs=[
                 text_input,
                 json_file,
+                audio_file,
                 resolution,
                 fps,
                 use_llm,
